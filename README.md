@@ -52,9 +52,7 @@ cd REALM
 git clone https://github.com/Physical-Intelligence/openpi.git
 cd openpi
 uv sync
-XLA_PYTHON_CLIENT_MEM_FRACTION=0.5 uv run scripts/serve_policy.py policy:checkpoint \
-  --policy.config=pi05_droid_jointpos_polaris \
-  --policy.dir=gs://openpi-assets/checkpoints/polaris/pi05_droid_jointpos_polaris
+XLA_PYTHON_CLIENT_MEM_FRACTION=0.5 uv run scripts/serve_policy.py policy:checkpoint --policy.config=gs://openpi-assets/checkpoints/pi0_fast_droid_jointpos
 ```
 > ❗ Set XLA_PYTHON_CLIENT_MEM_FRACTION such that you have at least 8GB+ free on the GPU for isaacsim.
 
@@ -82,8 +80,51 @@ This should produce a rollout video and a numpy report file with the evaluation 
 
 # End-to-end VLA benchmarking in REALM
 
-⏰ Instructions on using REALM for proper benchmarking, using custom models, and how to systematically test on all tasks and 
-preturbations will be provided soon.
+Follow steps 1 and 2 as above. Then run:
+```
+OMNIGIBSON_HEADLESS=1 python /app/examples/02_eval_dynamic_scenes.py \
+    --perturbation_id <PERTURBATION_ID [0-15]> \
+    --task_id <TASK_ID [0-9]> \
+    --repeats 25 \
+    --max_steps 800 \
+    --model pi0_FAST
+```
+
+| PERTURBATION_ID | Perturbation | Description                                                                                     | Category |
+|:----------------| :--- |:------------------------------------------------------------------------------------------------| :--- |
+| 0               | **Default** | Testing a skill under no specific perturbations.                                                | General |
+| 1               | **V-AUG** | Randomize *blur* and *contrast*.                                                                | Visual |
+| 2               | **V-SC** | Randomly spawn *new distractors* in the scene.                                                  | Visual |
+| 3               | **V-VIEW** | Random shifts to external *camera pose*.                                                        | Visual |
+| 4               | **V-LIGHT** | Randomize illumination *color* and *intensity*.                                                 | Visual |
+| 5               | **S-PROP** | Reference objects based on their properties.                                                    | Semantic |
+| 6               | **S-LANG** | Reference similar verbs and remove articles.                                                    | Semantic |
+| 7               | **S-MO** | Reference spatial relationships in the scene.                                                   | Semantic |
+| 8               | **S-AFF** | Reference human needs and use cases.                                                            | Semantic |
+| 9               | **S-INT** | Reference facts about the world that typically require knowledge from Internet-scale text data. | Semantic |
+| 10              | **B-HOBJ** | Randomize manipulated object *mass*.                                                            | Behavioral |
+| 11              | **VB-POSE** | Randomize manipulated *object pose*.                                                            | Visual + Behavioral |
+| 12              | **VB-MOBJ** | Randomize object *size* and *shape*.                                                            | Visual + Behavioral |
+| 13              | **SB-NOUN** | Reference *another known object* in the scene.                                                  | Semantic + Behavioral |
+| 14              | **SB-VRB** | Change the *tested skill* for another compatible one.                                           | Semantic + Behavioral |
+| 15              | **VSB-NOBJ** | Sample a *new unseen manipulated object*.                                                       | Visual + Semantic + Behavioral |
+
+| TASK_ID | Task |
+|:--------| :--- |
+| 0       | put_green_block_in_bowl |
+| 1       | put_banana_into_box |
+| 2       | rotate_marker |
+| 3       | rotate_mug |
+| 4       | pick_spoon |
+| 5       | pick_water_bottle |
+| 6       | stack_cubes |
+| 7       | push_switch |
+| 8       | open_drawer |
+| 9       | close_drawer |
+
+In our paper, we evaluated the three models on each of the 10 tasks, under all 16 perturbation settings
+with a sample size of 25 rollouts at 800 time-steps. Each number in the table below is then obtained by 
+averaging the results over these 10 tasks per eprturbation.
 
 Tabular results for the tested VLA models:
 
@@ -109,7 +150,7 @@ Tabular results for the tested VLA models:
 | **S-Avg.** | 0.30 (-0.14 $\downarrow$) | 0.50 (-0.11 $\downarrow$) |      0.19 (-0.00 -)       |
 | **B-Avg.** | 0.30 (-0.13 $\downarrow$) | 0.44 (-0.17 $\downarrow$) | 0.13 (-0.06 $\downarrow$) |
 
-Each number in the table is obtained by averaging the results over 10 tasks where each tasks is evaluated using a sample size of 25 rollouts at 800 time-steps with a fixed random seed of 1234.
+⏰ Instructions on using REALM for benchmarking using custom models and running at scale will be added soon.
 
 # 🚧 Roadmap
 - [x] Streamlined installation
