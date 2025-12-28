@@ -124,7 +124,7 @@ OMNIGIBSON_HEADLESS=1 python /app/examples/02_eval_dynamic_scenes.py \
 
 In our paper, we evaluated the three models on each of the 10 tasks, under all 16 perturbation settings
 with a sample size of 25 rollouts at 800 time-steps. Each number in the table below is then obtained by 
-averaging the results over these 10 tasks per eprturbation.
+averaging the results over these 10 tasks per perturbation.
 
 Tabular results for the tested VLA models:
 
@@ -152,12 +152,11 @@ Tabular results for the tested VLA models:
 
 ⏰ Instructions on using REALM for benchmarking using custom models and running at scale will be added soon.
 
-# 🚧 Roadmap
+# Roadmap 🚧
 - [x] Streamlined installation
 - [x] Example scripts for getting started
 - [ ] Improved benchmarking UX:
-  - [ ] End-to-end scripts for producing result plots and tables
-- [ ] Upload tabular results for all tasks / models / perturbations to ease reproducibility 
+  - [ ] End-to-end scripts for producing result plots and tables 
 - [ ] Extended documentation
 - [ ] Performance:
   - [ ] Support vectorized environments
