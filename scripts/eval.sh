@@ -3,6 +3,8 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+EVAL_SUCCESS=0
+
 # --------------------------------------------------------------------------------------
 # Help / usage
 # --------------------------------------------------------------------------------------
@@ -227,8 +229,19 @@ esac
 
 # Checking dependencies ------------------------------------------------------------------------------------
 
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-REALM_ROOT=$( cd -- "$( dirname -- "${SCRIPT_DIR}" )" &> /dev/null && pwd )
+if [ -z "${REALM_ROOT:-}" ]; then
+    {
+        echo "warning: REALM_ROOT is not set"
+        echo "warning: inferring REALM_ROOT from the script location"
+        echo "warning: when run under Slurm, the script may be executed from a spooled copy,"
+        echo "warning: so the inferred path may not match the original script location"
+    } >&2
+
+    SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+    REALM_ROOT=$(cd -- "$(dirname -- "${SCRIPT_DIR}")" && pwd)
+
+    echo "info: REALM_ROOT set to ${REALM_ROOT}" >&2
+fi
 
 if [[ -z "${REALM_DATA_PATH:-}" ]]; then
   echo "REALM_DATA_PATH is not set."
@@ -424,15 +437,18 @@ mkdir -p "$XDG_CACHE_HOME"
 PORT=""
 
 cleanup() {
+    if [[ "${EVAL_SUCCESS:-0}" -eq 1 ]]; then
+        echo "INFO: Shutting down model server (normal exit)." >&2
+    else
+        echo "WARNING: Cleaning up after premature exit." >&2
+    fi
     # Kill the whole process group if we know it
     if [[ -n "${SERVER_PGID:-}" ]]; then
-        echo "Cleaning up server process group $SERVER_PGID" >&2
         kill -TERM "-${SERVER_PGID}" 2>/dev/null || true
         sleep 2
         kill -KILL "-${SERVER_PGID}" 2>/dev/null || true
     elif [[ -n "${SERVER_PID:-}" ]]; then
         # fallback: kill just the main PID
-        echo "Cleaning up server PID $SERVER_PID" >&2
         kill -TERM "$SERVER_PID" 2>/dev/null || true
         sleep 2
         kill -KILL "$SERVER_PID" 2>/dev/null || true
@@ -486,6 +502,7 @@ if [ "$MODEL" == "pi0" ]; then
         --bind "$CKPT_PATH":/checkpoint \
         --env XLA_PYTHON_CLIENT_MEM_FRACTION=0.25 \
         --env XDG_CACHE_HOME=/app/.cache/xdg \
+        --env GIT_LFS_SKIP_SMUDGE=1 \
         "$OPENPI_SIF" uv run /app/scripts/serve_policy.py \
             --port=$PORT \
             policy:checkpoint \
@@ -516,6 +533,7 @@ elif [ "$MODEL" == "pi0_FAST" ]; then
         --bind "$CKPT_PATH":/checkpoint \
         --env XLA_PYTHON_CLIENT_MEM_FRACTION=0.25 \
         --env XDG_CACHE_HOME=/app/.cache/xdg \
+        --env GIT_LFS_SKIP_SMUDGE=1 \
         "$OPENPI_SIF" uv run /app/scripts/serve_policy.py \
             --port=$PORT \
             policy:checkpoint \
@@ -602,13 +620,13 @@ case "$EVAL_ENV" in
             --env "MAMBA_CACHE_DIR=/app/.cache/mamba/${SERVER_PID}" \
             --env "PIP_CACHE_DIR=/app/.cache/pip/${SERVER_PID}" \
             "$REALM_SIF" \
-            /app/scripts/karolina_evals/gen_eval_body.sh \
-                "$PERTURBATION_ID" \
-                "$TASK_ID" \
-                "$REPEATS" \
-                "$MAX_STEPS" \
-                "$MODEL" \
-                "$PORT"
+            micromamba run -n omnigibson python -u examples/02_eval_dynamic_scenes.py \
+                --perturbation_id $PERTURBATION_ID \
+                --task_id $TASK_ID \
+                --repeats $REPEATS \
+                --max_steps $MAX_STEPS \
+                --model $MODEL \
+                --port $PORT
         ;;
     docker)
         docker run \
@@ -628,21 +646,25 @@ case "$EVAL_ENV" in
             -v "$REALM_DATA_PATH/isaac-sim/data:/root/.local/share/ov/data:rw" \
             -v "$REALM_DATA_PATH/isaac-sim/documents:/root/Documents:rw" \
             --network=host --rm stanfordvl/omnigibson:1.1.1 \
-            /app/scripts/karolina_evals/gen_eval_body.sh \
-                "$PERTURBATION_ID" \
-                "$TASK_ID" \
-                "$REPEATS" \
-                "$MAX_STEPS" \
-                "$MODEL"\
-                "$PORT"
+            micromamba run -n omnigibson python -u examples/02_eval_dynamic_scenes.py \
+                --perturbation_id $PERTURBATION_ID \
+                --task_id $TASK_ID \
+                --repeats $REPEATS \
+                --max_steps $MAX_STEPS \
+                --model $MODEL \
+                --port $PORT
         ;;
     current)
-        ./scripts/karolina_evals/gen_eval_body.sh \
-            "$PERTURBATION_ID" \
-            "$TASK_ID" \
-            "$REPEATS" \
-            "$MAX_STEPS" \
-            "$MODEL" \
-            "$PORT"
+        micromamba run -n omnigibson python -u examples/02_eval_dynamic_scenes.py \
+            --perturbation_id $PERTURBATION_ID \
+            --task_id $TASK_ID \
+            --repeats $REPEATS \
+            --max_steps $MAX_STEPS \
+            --model $MODEL \
+            --port $PORT
         ;;
 esac
+
+# If we reach here, evaluation finished normally
+EVAL_SUCCESS=1
+echo "INFO: Evaluation finished successfully."
