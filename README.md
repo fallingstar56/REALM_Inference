@@ -179,7 +179,7 @@ ERC FRONTIER (No. 101097822), and ELLIOT (No. 101214398). Pavlo Yefanov (PY) and
 supported by Grant Agency of the Czech Technical University in Prague under allocations SGS25/158/OHK3/3T/13 (PY) and 
 SGS25/156/OHK3/3T/13 (GP). Martin Sedlacek was partly supported by the ELLIS Unit Amsterdam as part of the MSc Honours Programme. 
 Compute resources and infrastructure were supported by the Ministry of Education, Youth and Sports of the Czech Republic 
-through the e- INFRA CZ (ID:90254) and by the European Union's Horizon Europe project CLARA (No. 101136607).
+through the e-INFRA CZ (ID:90254) and by the European Union's Horizon Europe project CLARA (No. 101136607).
 
 # Citation
 
