@@ -66,7 +66,7 @@ def evaluate(
         repeats=1,
         max_steps=500,
         horizon=8,
-        model_type="pi0_FAST",
+        model="pi0_FAST",
         port=8000,
         log_dir="/app/logs"
 ):
@@ -78,6 +78,7 @@ def evaluate(
 
     os.makedirs(log_dir, exist_ok=True)
 
+    model_type = model # TODO: infer type from model name, rn this will just default to a pi model inference inside the client
     client = InferenceClient(model_type, port)
 
     env = RealmEnvironmentDynamic(
@@ -85,20 +86,6 @@ def evaluate(
         task=task,
         perturbations=perturbations
     )
-
-    # def enable_interactive_path_tracing(carb_settings, samples_per_pixel=16):
-    #     carb_settings.set("/rtx/rendermode", "PathTracing")
-    #     if samples_per_pixel is not None:
-    #         carb_settings.set_int("/rtx/pathtracing/spp", samples_per_pixel)
-    #         carb_settings.set_int("/rtx/pathtracing/totalSpp", samples_per_pixel)
-    #         carb_settings.set_int(
-    #             "/rtx/pathtracing/useDirectLightingCache", False
-    #         )
-    #     carb_settings.set_bool("/rtx/pathtracing/optixDenoiser/enabled", True)
-    # carb_settings = lazy.carb.settings.get_settings()
-    # carb_settings.set("/rtx/post/dlss/execMode", 0)
-    # carb_settings.set("/rtx/pathtracing/optixDenoiser/enabled", True)
-    # carb_settings.set("/rtx/pathtracing/maxBounces", 4)
 
     global_timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H:%M:%S")
     results = []
@@ -115,7 +102,6 @@ def evaluate(
 
         obs, _ = env.reset()
         instruction = env.instruction
-        print(instruction)
 
         # -------------------- Rollout loop --------------------
         obs, rew, terminated, truncated, info = env.warmup(obs)
@@ -169,17 +155,17 @@ def evaluate(
         results.append({
             "task": task,
             "perturbation": perturbations,
-            "model": model_type,
+            "model": model,
             "real2sim": "Simulated",
             "task_progression": task_progression,
             "task_progression_timestamps": task_progression_timestamps,
             "binary_SR": 1.0 if task_progression == 1.0 else 0.0
         })
 
-        save_filename = os.path.join(log_dir, f"{timestamp}_{model_type}_rollout_{task}_{perturbations}_{run_id}")
+        save_filename = os.path.join(log_dir, "videos", f"{timestamp}_{model}_rollout_{task}_{perturbations[0]}_{run_id}")
         video_recorder.save_video(save_filename)
         video_recorder.cleanup()
 
     # ------------------------------------------------------------------------------
-    save_results_to_csv(results, log_dir, global_timestamp, model_type, task, perturbations[0])
+    save_results_to_csv(results, log_dir+"/reports", global_timestamp, model, task, perturbations[0])
     print("Done!")

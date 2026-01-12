@@ -48,7 +48,6 @@ class InferenceClient:
                 [pred["action.joint_position"],
                  pred["action.gripper_position"].reshape(-1, 1)], axis=-1)
             return pred_action_chunk
-
         else:
             img_to_use = base_im_second if use_base_im_second else base_im
 
