@@ -1,6 +1,10 @@
 import numpy as np
 from PIL import Image
 from openpi_client import websocket_client_policy, image_tools
+import logging
+
+
+log = logging.getLogger("realm_inference")
 
 
 def extract_from_obs(obs: dict):
@@ -18,12 +22,12 @@ class InferenceClient:
         self.model_type = model_type
         self.client = None
         if model_type != "debug":
-             print("Connecting to server...")
+             log.info("Connecting to server...")
              self.client = websocket_client_policy.WebsocketClientPolicy(
                 host=host,
                 port=port
             )
-             print("Connected!")
+             log.info("Connected!")
 
     def infer(self, instruction, base_im, base_im_second, wrist_im, robot_state, gripper_state, use_base_im_second=False):
         if self.model_type == "debug":

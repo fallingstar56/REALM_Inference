@@ -10,6 +10,10 @@ from realm.environments.realm_environment_dynamic import RealmEnvironmentDynamic
 from realm.inference import InferenceClient, extract_from_obs
 from realm.logging import VideoRecorder, save_results_to_csv
 import time
+import logging
+
+
+log = logging.getLogger("realm_evaluator")
 
 SUPPORTED_TASKS = [
     "put_green_block_in_bowl", #0
@@ -71,7 +75,7 @@ def evaluate(
         log_dir="/app/logs"
 ):
     start = time.perf_counter()
-    print(f"DEBUG: Begin eval: {time.perf_counter() - start:.4f}s")
+    log.info(f"DEBUG: Begin eval: {time.perf_counter() - start:.4f}s")
     set_sim_config()
 
     # -------------------- Create the environment + client --------------------
@@ -82,14 +86,14 @@ def evaluate(
 
     model_type = model # TODO: infer type from model name, rn this will just default to a pi model inference inside the client
     client = InferenceClient(model_type, port)
-    print(f"DEBUG: Client connected: {time.perf_counter() - start:.4f}s")
+    log.info(f"DEBUG: Client connected: {time.perf_counter() - start:.4f}s")
 
     env = RealmEnvironmentDynamic(
         config_path="/app/realm/config",
         task=task,
         perturbations=perturbations
     )
-    print(f"DEBUG: Env created: {time.perf_counter() - start:.4f}s")
+    log.info(f"DEBUG: Env created: {time.perf_counter() - start:.4f}s")
 
     global_timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H:%M:%S")
     results = []
@@ -146,7 +150,7 @@ def evaluate(
             new_action = np.concatenate((new_joint_action, new_gripper_state))
 
             obs, curr_task_progression, terminated, truncated, info = env.step(new_action)
-            print(f"{t}: {curr_task_progression}")
+            #log.info(f"{t}: {curr_task_progression}")
 
             if curr_task_progression > task_progression:
                 task_progression = curr_task_progression
@@ -165,12 +169,12 @@ def evaluate(
             "task_progression_timestamps": task_progression_timestamps,
             "binary_SR": 1.0 if task_progression == 1.0 else 0.0
         })
-        print(f"DEBUG: Run finished: {time.perf_counter() - start:.4f}s")
+        log.info(f"DEBUG: Run finished: {time.perf_counter() - start:.4f}s")
         save_filename = os.path.join(log_dir, "videos", f"{timestamp}_{model}_rollout_{task}_{perturbations[0]}_{run_id}")
         video_recorder.save_video(save_filename)
         video_recorder.cleanup()
 
     # ------------------------------------------------------------------------------
     save_results_to_csv(results, log_dir+"/reports", global_timestamp, model, task, perturbations[0])
-    print("Done!")
-    print(f"DEBUG: CLEAN-UP done: {time.perf_counter() - start:.4f}s")
+    log.info("Done!")
+    log.info(f"DEBUG: CLEAN-UP done: {time.perf_counter() - start:.4f}s")

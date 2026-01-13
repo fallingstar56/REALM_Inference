@@ -5,6 +5,7 @@ import yaml
 import random
 import copy
 import os
+import logging
 
 from realm.environments.task_progressions import TASK_PROGRESSIONS
 from realm.helpers import (calculate_new_camera_pose_mixed_rotations, add_rotation_noise,
@@ -21,6 +22,9 @@ from omnigibson.utils.asset_utils import get_all_object_category_models
 from omnigibson.utils.asset_utils import get_all_object_models
 from omnigibson.utils.usd_utils import create_joint
 from omnigibson.prims.joint_prim import JointPrim
+
+
+log = logging.getLogger("realm_environment")
 
 MISSING_PERTURBATIONS = ["V-OBJ", "VB-ISC", "VS-PROP", "SB-ADV", "SB-SMO"]
 SUPPORTED_TASK_TYPES = ["put", "pick", "rotate", "push", "stack"]# TODO: "open_close_drawer", "turn_faucet"
@@ -191,7 +195,6 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         else:
             reset_joint_pos[:7] = np.array([0, -1 / 5 * np.pi, 0, -4 / 5 * np.pi, 0, 3 / 5 * np.pi, 0.0])
 
-        print(reset_joint_pos)
         cfg_robot = yaml.load(open(f"{self.config_path}/robots/franka_robotiq.yaml", "r"), Loader=yaml.FullLoader)
         cfg_robot["robots"][0]["position"] = robot_pos
         cfg_robot["robots"][0]["orientation"] = omnigibson_transform_utils.euler2quat(
@@ -247,7 +250,8 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
                 z=z,
                 obj_cfg=obj_list + distractors,
                 max_attempts_per_object=25000,
-                main_object_names=[o["name"] for o in obj_list]
+                main_object_names=[o["name"] for o in obj_list],
+                logger=log
             )
 
         if "distractors" in comprehensive_cfg:
@@ -292,9 +296,6 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         assert pose_name in self.cfg_camera_extrinsics
         base_cam_pos = self.cfg_camera_extrinsics[pose_name]["pos"]
         base_cam_rot = self.cfg_camera_extrinsics[pose_name]["rot"]
-        print("-----DEBUG")
-        print(len(base_cam_pos), len(base_cam_rot))
-        print(len(robot_pos), len(robot_rot))
         base_cam_pos, base_cam_rot = calculate_new_camera_pose_mixed_rotations(
             base_cam_pos, base_cam_rot,
             robot_pos, robot_rot
@@ -509,7 +510,8 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
                 obj_cfg=self.cfg["objects"],
                 objects_to_skip=[obj.name for obj in self.distractors + self.target_objects],
                 main_object_names=[],
-                max_attempts_per_object=25000 # TODO: this must be successful, careful what we do here...
+                max_attempts_per_object=25000, # TODO: this must be successful, careful what we do here...
+                logger=log
             )
 
             # obj_cfgs = copy.deepcopy(self.cfg["objects"])
@@ -577,29 +579,6 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
                 joint._articulation_view.set_gains(kps=torch.tensor([[joint.stiffness]]), joint_indices=joint.dof_indices)
                 joint._articulation_view.set_gains(kds=torch.tensor([[joint.damping]]), joint_indices=joint.dof_indices)
 
-                # TODO: add frictions
-                # print(type(link))
-                # print(link)
-                # link_name = link.name
-                # mat_name = f"{link_name}_physics_mat"
-                # physics_mat = lazy.isaacsim.core.api.materials.physics_material.PhysicsMaterial(
-                #     prim_path=f"{link.prim_path}/Looks/{mat_name}",
-                #     name=mat_name,
-                #     **material_info,
-                # )
-                # for msh in self.links[link_name].collision_meshes.values():
-                #     msh.apply_physics_material(physics_mat)
-
-
-                # link_prim = link._prim
-                # if not link_prim.HasAPI(lazy.pxr.UsdPhysics.RigidBodyAPI):
-                #     lazy.pxr.UsdPhysics.RigidBodyAPI.Apply(link_prim)
-                # og.sim.step()
-                # link_prim.GetAttribute("physxRigidBody:dynamicFriction").Set(0.5)
-                # link_prim.GetAttribute("physxRigidBody:staticFriction").Set(0.5)
-                # print(link.get_attribute("physxRigidBody:dynamicFriction"))
-                # print(link.get_attribute("physxRigidBody:staticFriction"))
-
     def apply_cached_semantic_perturbations(self, perturbation):
         tmp = self.cfg["cached_semantic_perturbations"][perturbation]
         idx = np.random.randint(0, len(tmp))
@@ -666,8 +645,6 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
 
         self.distractors.append(self.main_objects[0])
         self.main_objects[0] = new_mo
-        print([obj.name for obj in self.main_objects])
-        print([obj.name for obj in self.distractors])
 
 
     def sb_vrb(self):
@@ -740,7 +717,8 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
                 z=self.spawn_bbox[4],
                 obj_cfg=obj_cfgs,
                 objects_to_skip=[obj.name for obj in self.main_objects + self.distractors],
-                main_object_names=[o["name"] for o in obj_cfgs[:num_mo_to]]
+                main_object_names=[o["name"] for o in obj_cfgs[:num_mo_to]],
+                logger=log
             )
 
             pos = torch.tensor(self.cfg["objects"][-1]["position"])
@@ -856,6 +834,7 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
                 objects_to_skip=[obj.name for obj in self.target_objects + self.main_objects],
                 main_object_names=[o["name"] for o in obj_cfgs[:num_mo_to]],
                 maximum_dim=0.12,
+                logger=log
             )
 
         self.distractors = [self.omnigibson_env.scene.object_registry("name", dist["name"]) for dist in self.cfg["objects"][num_mo_to:]]
@@ -899,7 +878,7 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
 
     # ============================== [ROLLOUT UTILS] ==============================
     def warmup(self, obs=None):
-        print("Starting warmup...")
+        log.info("Starting warmup...")
         for _ in range(30):
             og.sim.render()
 
@@ -919,7 +898,7 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
             obs, rew, terminated, truncated, info = self.step(new_action)
 
         self.mo_pos_orig, self.mo_rot_orig = self.main_objects[0].get_position_orientation()
-        print("Warmup finished.")
+        log.info("Warmup finished.")
         return obs, rew, terminated, truncated, info
 
     def reset(self):
@@ -973,7 +952,7 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
             return []
 
         if len(available_object_paths) < num_objects:
-            print(
+            log.info(
                 f"Warning: Only {len(available_object_paths)} suitable objects found, less than requested {num_objects}.")
             num_objects = len(available_object_paths)
 

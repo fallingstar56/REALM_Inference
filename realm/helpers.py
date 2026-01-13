@@ -59,7 +59,6 @@ def calculate_new_camera_pose_mixed_rotations(
         camera_relative_to_base_xyz,
         camera_relative_to_base_quat_xyzw
     )
-    print("Camera Relative to Base (T_base_camera):\n", T_base_camera)
 
     # 2. Create the new robot base's absolute transformation matrix (T_world_new_base) from XYZ and RPY
     T_world_new_base = create_homogeneous_transform_from_rpy(
@@ -67,11 +66,9 @@ def calculate_new_camera_pose_mixed_rotations(
         new_base_pose_rpy_rad,
         order='xyz' # Assuming RPY rotation order for your robot base
     )
-    print("\nNew Robot Base Pose (T_world_new_base):\n", T_world_new_base)
 
     # 3. Calculate the new absolute camera transformation matrix (T_world_new_camera)
     T_world_new_camera = T_world_new_base.dot(T_base_camera)
-    print("\nNew Absolute Camera Pose (T_world_new_camera):\n", T_world_new_camera)
 
     # 4. Extract the new camera's XYZ and Quaternion
     new_camera_xyz, new_camera_quat_xyzw = get_xyz_quaternion_from_homogeneous_transform(
@@ -139,14 +136,6 @@ def apply_blur_and_contrast(obs, sigma=None, alpha=None):
 
 
 def compute_rot_diff_magnitude(initial_quat,final_quat):
-    # print(initial_quat)
-    # print(final_quat)
-    # r_initial = Rotation.from_quat(initial_quat)
-    # r_final = Rotation.from_quat(final_quat)
-    # r_diff = r_final * r_initial.inv()
-    # rotvec = r_diff.as_rotvec()
-    # overall_angle_rad = np.linalg.norm(rotvec)
-    # return overall_angle_rad
     r_initial = Rotation.from_quat(initial_quat)
     r_final = Rotation.from_quat(final_quat)
     r_diff = r_final * r_initial.inv()
@@ -237,9 +226,9 @@ def get_non_colliding_positions_for_objects_v2(
         max_attempts_per_object=2500,
         seed=None,
         objects_to_skip=None,
-        maximum_dim=0.12
+        maximum_dim=0.12,
+        logger=None,
 ):
-    print("DEBUG: Placing objects...")
     placed_objects_info = []
     objects_to_randomly_place = []
     if objects_to_skip is None:
@@ -247,7 +236,6 @@ def get_non_colliding_positions_for_objects_v2(
 
     # First pass: Identify main object, process skipped distractors, and collect other objects
     for i, cfg in enumerate(obj_cfg):
-        print(f"DEBUG: Processing object '{cfg['name']}'...")
         if cfg["name"] in main_object_names:
             half_width_main = cfg["bounding_box"][0] / 2
             half_depth_main = cfg["bounding_box"][1] / 2
@@ -269,7 +257,7 @@ def get_non_colliding_positions_for_objects_v2(
 
             # Ensure position exists for skipped distractors
             if "position" not in cfg or len(cfg["position"]) < 2:
-                print(f"Warning: Skipped distractor '{cfg['name']}' does not have a valid 'position' field. Skipping placement.")
+                logger.info(f"Warning: Skipped distractor '{cfg['name']}' does not have a valid 'position' field. Skipping placement.")
                 continue # Skip this distractor if position is invalid
 
             placed_objects_info.append((
@@ -320,7 +308,7 @@ def get_non_colliding_positions_for_objects_v2(
                 break
 
         if not placed:
-            print(f"Failed to place object '{cfg.get('name', 'Unnamed Object')}' after {max_attempts_per_object} attempts. Dropping it from the air.")
+            logger.info(f"Failed to place object '{cfg.get('name', 'Unnamed Object')}' after {max_attempts_per_object} attempts. Dropping it from the air.")
             x_center = np.random.uniform(xmin + half_width, xmax - half_width)
             y_center = np.random.uniform(ymin + half_depth, ymax - half_depth)
             obj_cfg[original_idx]["position"] = [x_center, y_center, z + 0.1]
