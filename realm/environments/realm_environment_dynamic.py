@@ -5,7 +5,6 @@ import yaml
 import random
 import copy
 import os
-import logging
 
 from realm.environments.task_progressions import TASK_PROGRESSIONS
 from realm.helpers import (calculate_new_camera_pose_mixed_rotations, add_rotation_noise,
@@ -24,7 +23,6 @@ from omnigibson.utils.usd_utils import create_joint
 from omnigibson.prims.joint_prim import JointPrim
 
 
-log = logging.getLogger("realm_environment")
 
 MISSING_PERTURBATIONS = ["V-OBJ", "VB-ISC", "VS-PROP", "SB-ADV", "SB-SMO"]
 SUPPORTED_TASK_TYPES = ["put", "pick", "rotate", "push", "stack"]# TODO: "open_close_drawer", "turn_faucet"
@@ -251,7 +249,6 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
                 obj_cfg=obj_list + distractors,
                 max_attempts_per_object=25000,
                 main_object_names=[o["name"] for o in obj_list],
-                logger=log
             )
 
         if "distractors" in comprehensive_cfg:
@@ -510,8 +507,7 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
                 obj_cfg=self.cfg["objects"],
                 objects_to_skip=[obj.name for obj in self.distractors + self.target_objects],
                 main_object_names=[],
-                max_attempts_per_object=25000, # TODO: this must be successful, careful what we do here...
-                logger=log
+                max_attempts_per_object=25000 # TODO: this must be successful, careful what we do here...
             )
 
             # obj_cfgs = copy.deepcopy(self.cfg["objects"])
@@ -718,7 +714,6 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
                 obj_cfg=obj_cfgs,
                 objects_to_skip=[obj.name for obj in self.main_objects + self.distractors],
                 main_object_names=[o["name"] for o in obj_cfgs[:num_mo_to]],
-                logger=log
             )
 
             pos = torch.tensor(self.cfg["objects"][-1]["position"])
@@ -834,7 +829,6 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
                 objects_to_skip=[obj.name for obj in self.target_objects + self.main_objects],
                 main_object_names=[o["name"] for o in obj_cfgs[:num_mo_to]],
                 maximum_dim=0.12,
-                logger=log
             )
 
         self.distractors = [self.omnigibson_env.scene.object_registry("name", dist["name"]) for dist in self.cfg["objects"][num_mo_to:]]
@@ -878,7 +872,7 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
 
     # ============================== [ROLLOUT UTILS] ==============================
     def warmup(self, obs=None):
-        log.info("Starting warmup...")
+        og.log.info("Starting warmup...")
         for _ in range(30):
             og.sim.render()
 
@@ -898,7 +892,7 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
             obs, rew, terminated, truncated, info = self.step(new_action)
 
         self.mo_pos_orig, self.mo_rot_orig = self.main_objects[0].get_position_orientation()
-        log.info("Warmup finished.")
+        og.log.info("Warmup finished.")
         return obs, rew, terminated, truncated, info
 
     def reset(self):
@@ -952,7 +946,7 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
             return []
 
         if len(available_object_paths) < num_objects:
-            log.info(
+            og.log.info(
                 f"Warning: Only {len(available_object_paths)} suitable objects found, less than requested {num_objects}.")
             num_objects = len(available_object_paths)
 

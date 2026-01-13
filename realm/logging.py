@@ -5,10 +5,8 @@ import shutil
 import uuid
 from PIL import Image
 from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
-import logging
+import omnigibson as og
 
-
-log = logging.getLogger("realm_logging")
 
 def save_results_to_csv(results, log_dir, global_timestamp, model_type, task, perturbation):
     file_uuid = str(uuid.uuid1())[:6]
@@ -28,7 +26,7 @@ def save_results_to_csv(results, log_dir, global_timestamp, model_type, task, pe
             dict_writer = csv.DictWriter(output_file, fieldnames=keys)
             dict_writer.writeheader()
             dict_writer.writerows(results)
-    log.info(f"Saved run report to {csv_results_filename}")
+    og.log.info(f"Saved run report to {csv_results_filename}")
 
 class VideoRecorder:
     def __init__(self, log_dir, timestamp, run_id):

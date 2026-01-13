@@ -226,8 +226,7 @@ def get_non_colliding_positions_for_objects_v2(
         max_attempts_per_object=2500,
         seed=None,
         objects_to_skip=None,
-        maximum_dim=0.12,
-        logger=None,
+        maximum_dim=0.12
 ):
     placed_objects_info = []
     objects_to_randomly_place = []
@@ -257,7 +256,7 @@ def get_non_colliding_positions_for_objects_v2(
 
             # Ensure position exists for skipped distractors
             if "position" not in cfg or len(cfg["position"]) < 2:
-                logger.info(f"Warning: Skipped distractor '{cfg['name']}' does not have a valid 'position' field. Skipping placement.")
+                og.log.warn(f"Warning: Skipped distractor '{cfg['name']}' does not have a valid 'position' field. Skipping placement.")
                 continue # Skip this distractor if position is invalid
 
             placed_objects_info.append((
@@ -308,7 +307,7 @@ def get_non_colliding_positions_for_objects_v2(
                 break
 
         if not placed:
-            logger.info(f"Failed to place object '{cfg.get('name', 'Unnamed Object')}' after {max_attempts_per_object} attempts. Dropping it from the air.")
+            og.log.error(f"Failed to place object '{cfg.get('name', 'Unnamed Object')}' after {max_attempts_per_object} attempts. Dropping it from the air.")
             x_center = np.random.uniform(xmin + half_width, xmax - half_width)
             y_center = np.random.uniform(ymin + half_depth, ymax - half_depth)
             obj_cfg[original_idx]["position"] = [x_center, y_center, z + 0.1]
