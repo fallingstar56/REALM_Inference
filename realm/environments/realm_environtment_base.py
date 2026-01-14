@@ -318,7 +318,6 @@ class RealmEnvironmentBase:
         mo_rot_curr = mo.get_position_orientation()[1]
 
         rot_diff = compute_rot_diff_magnitude(self.mo_rot_orig, mo_rot_curr)
-        print(mo_rot_curr, self.mo_rot_orig, rot_diff)
 
         return abs(rot_diff) > rot_threshold
 
