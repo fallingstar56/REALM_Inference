@@ -46,6 +46,11 @@ METADATA_FILE="$METADATA_DIR/metadata.json"
 
 #---------------------------------------------------------------------------------
 
+debug_flag=""
+if [ "$DEBUG" = "true" ]; then
+  debug_flag="--debug"
+fi
+
 for i in "${TASK_IDS[@]}"; do
   for j in "${PERT_IDS[@]}"; do
     sbatch scripts/cluster_evals/run_single_eval.sh \
@@ -59,6 +64,6 @@ for i in "${TASK_IDS[@]}"; do
       --base_port "$BASE_PORT" \
       --experiment_name "$EXPERIMENT_NAME" \
       --run_id "$RUN_ID" \
-      --debug "$DEBUG"
+      $debug_flag
   done
 done
