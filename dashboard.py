@@ -63,25 +63,36 @@ render_tree(LOGS_DIR)
 
 # Sidebar Filter
 st.sidebar.markdown("---")
-st.sidebar.header("Filter Videos")
-selected_filters = []
+st.sidebar.header("Filter Data & Videos")
 
-# Filter UI
-# "Each task and its perturbations should have a checkbox, that if ticked, shows only relevant videos."
-# We iterate tasks and create expanders
-for task in dashboard_utils.SUPPORTED_TASKS:
-    with st.sidebar.expander(task, expanded=False):
-        # "All" checkbox for convenience
-        all_key = f"filter_all_{task}"
-        select_all = st.checkbox(f"All Perturbations", key=all_key)
+with st.sidebar.expander("Filter by Task", expanded=False):
+    selected_tasks = []
+    # Using checkboxes for specific user request "list of tasks"
+    # Or st.multiselect. Let's do multiselect as it's cleaner for 10 items.
+    # But user asked for "list of tasks... each task and its perturbations should have a checkbox" in original request.
+    # In the revised request: "just have a list of tasks an list of perturbations individually".
+    # I'll use multiselect for compactness, but labelled clearly.
+    # If the user insists on checkboxes, I can change it, but multiselect is standard.
+    # Actually, let's use checkboxes to be safe with "list... individually".
 
+    # "All" option
+    all_tasks = st.checkbox("All Tasks", value=False)
+    if all_tasks:
+        selected_tasks = dashboard_utils.SUPPORTED_TASKS
+    else:
+        for task in dashboard_utils.SUPPORTED_TASKS:
+            if st.checkbox(task, key=f"chk_task_{task}"):
+                selected_tasks.append(task)
+
+with st.sidebar.expander("Filter by Perturbation", expanded=False):
+    selected_perts = []
+    all_perts = st.checkbox("All Perturbations", value=False)
+    if all_perts:
+        selected_perts = dashboard_utils.SUPPORTED_PERTURBATIONS
+    else:
         for pert in dashboard_utils.SUPPORTED_PERTURBATIONS:
-            pert_key = f"filter_{task}_{pert}"
-            is_checked = st.checkbox(pert, key=pert_key)
-
-            if select_all or is_checked:
-                selected_filters.append((task, pert))
-
+            if st.checkbox(pert, key=f"chk_pert_{pert}"):
+                selected_perts.append(pert)
 
 # Main Content
 if st.session_state.selected_experiment and os.path.exists(st.session_state.selected_experiment):
@@ -105,9 +116,61 @@ if st.session_state.selected_experiment and os.path.exists(st.session_state.sele
     st.divider()
 
     # Load Reports
-    df = dashboard_utils.load_reports(selected_path)
+    raw_df = dashboard_utils.load_reports(selected_path)
 
-    # Plots Section
+    # Apply filters to dataframe
+    df = dashboard_utils.filter_dataframe(raw_df, selected_tasks, selected_perts)
+
+    # Experiment Status Section (Uses raw data? Or filtered? Usually status checks ALL data against requirement)
+    # The requirement is "completely present perturbation task combinations in the data".
+    # This implies checking the FULL dataset, not the filtered one.
+    st.header("Experiment Status")
+    try:
+        # Resolve experiment directory from selected_path
+        rel_path = os.path.relpath(selected_path, LOGS_DIR)
+        parts = rel_path.split(os.sep)
+
+        if len(parts) > 0:
+            experiment_name = parts[0]
+            experiment_path = os.path.join(LOGS_DIR, experiment_name)
+
+            metadata, err = dashboard_utils.load_experiment_metadata(experiment_path)
+
+            if metadata:
+                tasks_indices = metadata.get("task_ids", [])
+                perts_indices = metadata.get("perturbation_ids", [])
+                required_repeats = metadata.get("repeats", 0)
+
+                st.write(f"**Target Configuration (from {experiment_name}/metadata.json):** Tasks: {tasks_indices}, Perturbations: {perts_indices}, Repeats: {required_repeats}")
+
+                status, msg = dashboard_utils.check_experiment_status(raw_df, tasks_indices, perts_indices, required_repeats)
+
+                if status:
+                    st.success("✅ " + msg)
+                else:
+                    st.error("❌ " + msg)
+
+                # Show completed combinations (from RAW data)
+                completed = dashboard_utils.get_completed_experiments(raw_df, required_repeats)
+                if completed:
+                    with st.expander("Completed Combinations", expanded=True):
+                        grouped = defaultdict(list)
+                        for t, p in completed:
+                            grouped[t].append(p)
+
+                        for t, perts in grouped.items():
+                            st.write(f"- **{t}**: {', '.join(perts)}")
+            else:
+                st.warning(err)
+        else:
+            st.warning("Could not determine experiment directory.")
+
+    except Exception as e:
+        st.error(f"Error in Experiment Status: {e}")
+
+    st.divider()
+
+    # Plots Section (Uses Filtered Data)
     st.header("Plots")
     try:
         if df is not None and not df.empty:
@@ -153,71 +216,30 @@ if st.session_state.selected_experiment and os.path.exists(st.session_state.sele
                     fig.savefig(buf, format="png")
                     st.image(buf)
         else:
-            st.info("No data available for plots.")
+            if raw_df is not None:
+                st.info("No data matches the selected filters.")
+            else:
+                st.info("No data available.")
     except Exception as e:
         st.error(f"Error in Plots: {e}")
 
-    # Experiment Status Section
-    st.header("Experiment Status")
-    try:
-        # Resolve experiment directory from selected_path
-        rel_path = os.path.relpath(selected_path, LOGS_DIR)
-        parts = rel_path.split(os.sep)
-
-        if len(parts) > 0:
-            experiment_name = parts[0]
-            experiment_path = os.path.join(LOGS_DIR, experiment_name)
-
-            metadata, err = dashboard_utils.load_experiment_metadata(experiment_path)
-
-            if metadata:
-                tasks_indices = metadata.get("task_ids", [])
-                perts_indices = metadata.get("perturbation_ids", [])
-                required_repeats = metadata.get("repeats", 0)
-
-                st.write(f"**Target Configuration (from {experiment_name}/metadata.json):** Tasks: {tasks_indices}, Perturbations: {perts_indices}, Repeats: {required_repeats}")
-
-                status, msg = dashboard_utils.check_experiment_status(df, tasks_indices, perts_indices, required_repeats)
-
-                if status:
-                    st.success("✅ " + msg)
-                else:
-                    st.error("❌ " + msg)
-
-                # Show completed combinations
-                completed = dashboard_utils.get_completed_experiments(df, required_repeats)
-                if completed:
-                    with st.expander("Completed Combinations", expanded=True):
-                        grouped = defaultdict(list)
-                        for t, p in completed:
-                            grouped[t].append(p)
-
-                        for t, perts in grouped.items():
-                            st.write(f"- **{t}**: {', '.join(perts)}")
-            else:
-                st.warning(err)
-        else:
-            st.warning("Could not determine experiment directory.")
-
-    except Exception as e:
-        st.error(f"Error in Experiment Status: {e}")
-
-    # Aggregated Reports Section
+    # Aggregated Reports Section (Uses Filtered Data)
     st.header("Aggregated Reports")
     try:
         if df is not None:
+            st.write(f"Showing {len(df)} rows.")
             st.dataframe(df, height=300)
         else:
             st.info("No reports found.")
     except Exception as e:
         st.error(f"Error in Aggregated Reports: {e}")
 
-    # Videos Section
+    # Videos Section (Uses Filters)
     st.header("Videos")
     videos = dashboard_utils.get_videos(selected_path)
 
     # Filter videos
-    filtered_videos = dashboard_utils.filter_videos(videos, selected_filters)
+    filtered_videos = dashboard_utils.filter_videos(videos, selected_tasks, selected_perts)
 
     if filtered_videos:
         # Tiled viewer with 3 columns

@@ -137,22 +137,13 @@ def get_completed_experiments(df, required_repeats=1):
         return []
 
     completed = []
-    # We iterate over all supported combinations to check them?
-    # Or simpler: group by task and perturbation in df and check counts.
-
-    # Group by 'task' and 'perturbation' and count
     try:
         counts = df.groupby(['task', 'perturbation']).size()
 
         for (task, pert_str), count in counts.items():
             if count >= required_repeats:
-                # pert_str in CSV is "['PERT']", we need to clean it?
-                # The dataframe loaded from CSV has "['Default']" as string.
-                # We should extract 'Default' from it.
                 pert_clean = pert_str.replace("['", "").replace("']", "")
                 completed.append((task, pert_clean))
-
-        # Sort for display stability
         completed.sort()
     except Exception as e:
         print(f"Error in get_completed_experiments: {e}")
@@ -160,46 +151,74 @@ def get_completed_experiments(df, required_repeats=1):
 
     return completed
 
-def filter_videos(video_paths, selected_filters):
+def filter_dataframe(df, selected_tasks=None, selected_perts=None):
     """
-    Filters video paths based on selected (task, perturbation) tuples.
-    selected_filters: list of (task, perturbation) tuples.
-    If selected_filters is empty, returns all videos?
-    Wait, logic decision: "if ticked, shows only relevant videos".
-    If nothing ticked, assume show all.
+    Filters the dataframe based on selected tasks and perturbations.
     """
-    if not selected_filters:
+    if df is None or df.empty:
+        return df
+
+    filtered_df = df.copy()
+
+    # 1. Clean perturbation column to match simplified names
+    # The dataframe 'perturbation' column often looks like "['Default']"
+    # We create a temporary column for filtering
+    filtered_df['_pert_clean'] = filtered_df['perturbation'].apply(
+        lambda x: x.replace("['", "").replace("']", "") if isinstance(x, str) else str(x)
+    )
+
+    if selected_tasks:
+        filtered_df = filtered_df[filtered_df['task'].isin(selected_tasks)]
+
+    if selected_perts:
+        filtered_df = filtered_df[filtered_df['_pert_clean'].isin(selected_perts)]
+
+    # Clean up temp column
+    filtered_df = filtered_df.drop(columns=['_pert_clean'])
+
+    return filtered_df
+
+def filter_videos(video_paths, selected_tasks=None, selected_perts=None):
+    """
+    Filters video paths based on selected tasks and perturbations lists.
+    Logic: (Task in selected_tasks OR empty) AND (Pert in selected_perts OR empty).
+    """
+    if not selected_tasks and not selected_perts:
         return video_paths
 
     filtered = []
     for v in video_paths:
         filename = os.path.basename(v)
-        # Check if video matches ANY of the selected filters
-        match = False
-        for task, pert in selected_filters:
-            # Check if task and pert are in filename.
-            # Filename format: timestamp_model_rollout_TASK_PERT_runid.mp4
-            # We need robust checking because TASK might be substring of another TASK (unlikely given names)
-            # but PERT definitely can overlap?
-            # SUPPORTED_TASKS are distinct enough.
 
-            if task in filename:
-                # Now check perturbation.
-                # 'V-AUG' vs 'Default'
-                # If filename contains 'V-AUG', it matches.
-                # Note: filename might not have brackets.
-                # Logging: f"{timestamp}_{model}_rollout_{task}_{perturbations[0]}_{run_id}"
-                # perturbation is just the string, e.g. "V-AUG".
-
-                # Boundary check?
-                # e.g. "put_green_block_in_bowl" matches.
-                # "V-AUG" matches.
-
-                if pert in filename:
-                    match = True
+        # Check Task
+        task_match = False
+        if not selected_tasks:
+            task_match = True
+        else:
+            for t in selected_tasks:
+                if t in filename:
+                    task_match = True
                     break
 
-        if match:
+        if not task_match:
+            continue
+
+        # Check Perturbation
+        pert_match = False
+        if not selected_perts:
+            pert_match = True
+        else:
+            for p in selected_perts:
+                # We need to be careful with substring matching for perturbations.
+                # e.g., 'V-AUG' in filename.
+                # However, filename format is typically: ..._rollout_TASK_PERT_...
+                # So the pert string is surrounded by underscores or end of string?
+                # But simple inclusion is likely sufficient given the uniqueness of names in SUPPORTED_PERTURBATIONS.
+                if p in filename:
+                    pert_match = True
+                    break
+
+        if pert_match:
             filtered.append(v)
 
     return filtered
