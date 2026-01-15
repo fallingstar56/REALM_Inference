@@ -108,10 +108,8 @@ def evaluate(
             existing_results = list(reader)
         results = existing_results
         start_repeat = len(results)
-        global_timestamp = resume_run_id
         og.log.info(f"Resuming run {resume_run_id} from repeat {start_repeat}. Using file: {csv_filename}")
     else:
-        global_timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H:%M:%S")
         results = []
         start_repeat = 0
         csv_filename = None
@@ -163,7 +161,6 @@ def evaluate(
                 else:
                     action_buffer.put(pred_action_chunk)
 
-            # Save frame
             video_recorder.add_frame(base_im, wrist_im)
 
             qpos.append(np.concatenate((robot_state, np.atleast_1d(np.array(gripper_state)))))
@@ -178,7 +175,6 @@ def evaluate(
             new_action = np.concatenate((new_joint_action, new_gripper_state))
 
             obs, curr_task_progression, terminated, truncated, info = env.step(new_action)
-            #og.log.info(f"{t}: {curr_task_progression}")
 
             if curr_task_progression > task_progression:
                 task_progression = curr_task_progression
@@ -187,23 +183,36 @@ def evaluate(
                 terminal_steps -= 1
             t += 1
 
+        og.log.info(f"DEBUG: Run finished: {time.perf_counter() - start:.4f}s")
         # ------------------------------------------------------------------------------
         results.append({
+            "run_id": run_id,
             "task": task,
-            "perturbation": perturbations,
+            "perturbation": perturbations[0],
+            "instruction": instruction,
             "model": model,
             "real2sim": "Simulated",
+            "env": "REALM",
             "task_progression": task_progression,
             "task_progression_timestamps": task_progression_timestamps,
             "binary_SR": 1.0 if task_progression == 1.0 else 0.0
         })
-        og.log.info(f"DEBUG: Run finished: {time.perf_counter() - start:.4f}s")
-        save_filename = os.path.join(log_dir, "videos", f"{timestamp}_{model}_rollout_{task}_{perturbations[0]}_{run_id}")
-        video_recorder.save_video(save_filename)
+
+        video_filename = os.path.join(log_dir, "videos", f"{task}_{perturbations[0]}_{run_id}")
+        video_recorder.save_video(video_filename)
         video_recorder.cleanup()
 
-        csv_filename = save_results_to_csv(results, log_dir+"/reports", global_timestamp, model, task, perturbations[0], filename=csv_filename)
+        qpos_filename = os.path.join(log_dir, "qpos", f"{task}_{perturbations[0]}_{run_id}")
+        os.makedirs(log_dir + "/qpos", exist_ok=True)
+        np.save(qpos_filename, np.stack(qpos))
+
+        actions_filename = os.path.join(log_dir, "actions", f"{task}_{perturbations[0]}_{run_id}")
+        os.makedirs(log_dir + "/actions", exist_ok=True)
+        np.save(actions_filename, np.stack(actions))
+
+        csv_filename = save_results_to_csv(results, log_dir + "/reports", task, perturbations[0], filename=csv_filename)
 
     # ------------------------------------------------------------------------------
+    save_results_to_csv(results, log_dir+"/reports", task, perturbations[0])
     og.log.info("Done!")
-    og.log.info(f"DEBUG: CLEAN-UP done: {time.perf_counter() - start:.4f}s")
+    og.log.info(f"DEBUG: Done: {time.perf_counter() - start:.4f}s")

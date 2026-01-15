@@ -107,7 +107,7 @@ def check_experiment_status(df, tasks_indices, perts_indices, required_repeats):
     for i in perts_indices:
         if 0 <= i < len(SUPPORTED_PERTURBATIONS):
             # Format to match CSV string representation of list
-            target_perts.append(f"['{SUPPORTED_PERTURBATIONS[i]}']")
+            target_perts.append(f"{SUPPORTED_PERTURBATIONS[i]}")
 
     if not target_tasks or not target_perts:
         return False, "Invalid task or perturbation indices in experiment name."

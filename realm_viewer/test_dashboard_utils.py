@@ -1,6 +1,6 @@
 import unittest
 import pandas as pd
-from dashboard_utils import get_completed_experiments, filter_videos, filter_dataframe
+from realm_viewer.dashboard_utils import get_completed_experiments, filter_videos, filter_dataframe
 
 class TestDashboardUtils(unittest.TestCase):
     def test_get_completed_experiments(self):
