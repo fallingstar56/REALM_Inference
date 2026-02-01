@@ -191,6 +191,80 @@ class RealmEnvironmentBase:
         else:
             self.mo_joint = None
 
+    def get_ee_pose(self):
+        ee_link_name = self.robot.eef_link_names[self.robot.default_arm]
+        ee_link = self.robot.links[ee_link_name]
+        return ee_link.get_position_orientation()
+
+    def check_collisions(self):
+        self_collision = False
+        env_collision = False
+
+        # Cache adjacent links to ignore self-collisions between connected bodies
+        if not hasattr(self, "_robot_adjacent_links"):
+            self._robot_adjacent_links = set()
+            if hasattr(self.robot, "joints"):
+                for joint in self.robot.joints.values():
+                    b0 = joint.body0
+                    b1 = joint.body1
+                    if b0 and b1:
+                        self._robot_adjacent_links.add(frozenset((b0, b1)))
+
+        robot_links = list(self.robot.links.values())
+        robot_link_paths = set(l.prim_path for l in robot_links)
+        robot_prim_path = self.robot.prim_path
+
+        # Objects to ignore for environment collision (manipulation targets)
+        # We use prefixes to catch links and geoms belonging to these objects
+        ignore_obj_roots = [obj.prim_path for obj in self.main_objects + self.target_objects]
+
+        for link in robot_links:
+            # Skip root link (usually touching mount/floor)
+            if link.name == self.robot.root_link_name:
+                continue
+
+            contacts = link.contact_list()
+            for contact in contacts:
+                # Filter by impulse if available (ignore resting/negligible contacts)
+                if hasattr(contact, "impulse"):
+                    impulse_val = contact.impulse
+                    # Handle structured array if necessary (based on error message)
+                    if impulse_val.dtype.names is not None:
+                         impulse_vec = np.array([impulse_val['x'], impulse_val['y'], impulse_val['z']])
+                    else:
+                         impulse_vec = impulse_val
+                    
+                    if np.linalg.norm(impulse_vec) < 1e-3:
+                        continue
+                else:
+                    continue
+
+                if contact.body0 == link.prim_path:
+                    other_path = contact.body1
+                else:
+                    other_path = contact.body0
+
+                # Check if other_path belongs to the robot
+                is_robot = other_path in robot_link_paths or other_path.startswith(robot_prim_path)
+
+                if is_robot:
+                    # Ignore collisions between adjacent links
+                    # Only applicable if we have exact link paths; otherwise assume it's a valid self-collision
+                    if other_path in robot_link_paths:
+                        if frozenset((link.prim_path, other_path)) in self._robot_adjacent_links:
+                            continue
+                    self_collision = True
+                else:
+                    # Check if it's an allowed environment contact (belongs to main/target objects)
+                    is_ignored = any(other_path.startswith(root) for root in ignore_obj_roots)
+                    if not is_ignored:
+                        env_collision = True
+
+            if self_collision and env_collision:
+                break
+
+        return self_collision, env_collision
+
     # ============================== [SUCCESS METRICS] ==============================
     def is_grasping(self, obs, candidate_obj):
         finger_joints = obs['franka']['proprio'][7:9].cpu().numpy()
