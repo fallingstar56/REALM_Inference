@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import cv2
 import numpy as np
 import torch
@@ -314,3 +313,42 @@ def get_non_colliding_positions_for_objects_v2(
 
 
     return obj_cfg
+
+### Subtractions ###
+def quat_diff(target, source):
+    result = Rotation.from_quat(target) * Rotation.from_quat(source).inv()
+    return result.as_quat()
+
+
+def angle_diff(target, source, degrees=False):
+    target_rot = Rotation.from_euler("xyz", target, degrees=degrees)
+    source_rot = Rotation.from_euler("xyz", source, degrees=degrees)
+    result = target_rot * source_rot.inv()
+    return result.as_euler("xyz")
+
+
+def pose_diff(target, source, degrees=False):
+    lin_diff = np.array(target[:3]) - np.array(source[:3])
+    rot_diff = angle_diff(target[3:6], source[3:6], degrees=degrees)
+    result = np.concatenate([lin_diff, rot_diff])
+    return result
+
+
+### Additions ###
+def add_quats(delta, source):
+    result = Rotation.from_quat(delta) * Rotation.from_quat(source)
+    return result.as_quat()
+
+
+def add_angles(delta, source, degrees=False):
+    delta_rot = Rotation.from_euler("xyz", delta, degrees=degrees)
+    source_rot = Rotation.from_euler("xyz", source, degrees=degrees)
+    new_rot = delta_rot * source_rot
+    return new_rot.as_euler("xyz", degrees=degrees)
+
+
+def add_poses(delta, source, degrees=False):
+    lin_sum = np.array(delta[:3]) + np.array(source[:3])
+    rot_sum = add_angles(delta[3:6], source[3:6], degrees=degrees)
+    result = np.concatenate([lin_sum, rot_sum])
+    return result

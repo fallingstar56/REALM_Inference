@@ -1,3 +1,5 @@
+from math import floor
+
 import torch as th
 from omnigibson.controllers.controller_base import (
     BaseController,
@@ -12,7 +14,10 @@ import omnigibson as og  # For og.sim.device
 from omnigibson.macros import gm
 from omnigibson.utils.control_utils import orientation_error
 import omnigibson.utils.transform_utils as T
-
+import numpy as np
+from realm.helpers import add_poses, pose_diff
+from scipy.spatial.transform import Rotation as R
+from realm.robots.robot_ik.robot_ik_solver import RobotIKSolver
 
 # Create module logger
 log = create_module_logger(module_name=__name__)
@@ -23,6 +28,7 @@ IK_MODE_COMMAND_DIMS = {
     "pose_delta_ori": 6,  # 6DOF (dx,dy,dz,dax,day,daz) control over pose
     "position_fixed_ori": 3,  # 3DOF (dx,dy,dz) control over position, with orientation commands being kept as fixed initial absolute orientation
     "position_compliant_ori": 3,  # 3DOF (dx,dy,dz) control over position, with orientation commands automatically being sent as 0s (so can drift over time)
+    "cartesian_velocity": 6
 }
 IK_MODES = set(IK_MODE_COMMAND_DIMS.keys())
 
@@ -48,7 +54,6 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
             mode="pose_delta_ori",
             workspace_pose_limiter=None
     ):
-        motor_type = "effort"
         self._motor_type = motor_type.lower()
         self._use_impedances = True
 
@@ -62,9 +67,10 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
             assert command_input_limits is None, "command_input_limits should be None if using absolute_pose mode!"
             assert command_output_limits is None, "command_output_limits should be None if using absolute_pose mode!"
 
-        self.mode = mode
         self.workspace_pose_limiter = workspace_pose_limiter
         self.task_name = f"eef_0"
+        self.mode = mode
+        self.gt_traj = np.load(f"/app/data/droid_1.0.1/episode_000000_action.joint_position.npy", allow_pickle=True)
 
         super().__init__(
             control_freq=control_freq,
@@ -91,18 +97,28 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
         self.time_tracker = -1 # we update at the very beginning of compute_control, so this is 0 when controller is queried for the very first time
         self.cached_torque = None
 
+        self._ik_solver = RobotIKSolver()
+
     def _update_goal(self, command, control_dict):
         # Grab important info from control dict
         pos_relative = control_dict[f"{self.task_name}_pos_relative"]
         quat_relative = control_dict[f"{self.task_name}_quat_relative"]
 
+        #command[:3], command[3:6] = self._scale_cartesian_6d_velocity(command[:3], command[3:6])
+
         # Convert position command to absolute values if needed
         if self.mode == "absolute_pose":
             target_pos = command[:3]
+            target_pos[2] += 0.87 # height of robot base
         else:
             dpos = command[:3]
             target_pos = pos_relative + dpos
 
+        target_rpy_relative = None
+        target_rpy = None
+        target_cartesian_pos_vel = None
+        target_cartesian_rot_vel = None
+        target_quat = None
         # Compute orientation
         if self.mode == "position_fixed_ori":
             # We need to grab the current robot orientation as the commanded orientation if there is none saved
@@ -114,10 +130,15 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
             target_quat = quat_relative
         elif self.mode == "pose_absolute_ori" or self.mode == "absolute_pose":
             # Received "delta" ori is in fact the desired absolute orientation
-            target_quat = T.axisangle2quat(command[3:6])
+            target_quat = T.euler2quat(command[3:6])
+            target_rpy = command[3:6]
+        elif self.mode == "cartesian_velocity":
+            target_cartesian_pos_vel = command[:3]
+            target_cartesian_rot_vel = command[3:6]
         else:  # pose_delta_ori control
             # Grab dori and compute target ori
-            dori = T.quat2mat(T.axisangle2quat(command[3:6]))
+            target_rpy_relative = command[3:6]
+            dori = T.quat2mat(T.euler2quat(command[3:6]))
             target_quat = T.mat2quat(dori @ T.quat2mat(quat_relative))
 
         # Possibly limit to workspace if specified
@@ -127,6 +148,12 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
         goal_dict = dict(
             target_pos=target_pos,
             target_quat=target_quat,
+            target_rpy=target_rpy,
+            target_pos_relative=pos_relative,
+            target_quat_relative=quat_relative,
+            target_rpy_relative=target_rpy_relative,
+            target_cartesian_pos_vel=target_cartesian_pos_vel,
+            target_cartesian_rot_vel=target_cartesian_rot_vel,
         )
 
         return goal_dict
@@ -138,46 +165,79 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
         current_joint_pos = control_dict["joint_position"][self.dof_idx].to(og.sim.device)
         current_joint_vel = control_dict["joint_velocity"][self.dof_idx].to(og.sim.device)
 
-        #--------------------------------------------------------------------------------
-        pos_relative = control_dict[f"{self.task_name}_pos_relative"]
-        quat_relative = control_dict[f"{self.task_name}_quat_relative"]
-        target_pos = goal_dict["target_pos"]
-        target_quat = goal_dict["target_quat"]
-
-        # If the delta is really small, we just keep the current joint position. This avoids joint
-        # drift caused by IK solver inaccuracy even when zero delta actions are provided.
-        if th.allclose(pos_relative, target_pos, atol=1e-4) and th.allclose(quat_relative, target_quat, atol=1e-4):
-            joint_pos_desired = current_joint_pos
-        else:
-            # Compute the pose error. Note that this is computed NOT in the EEF frame but still
-            # in the base frame.
-            pos_err = target_pos - pos_relative
-            ori_err = orientation_error(T.quat2mat(target_quat), T.quat2mat(quat_relative))
-            err = th.cat([pos_err, ori_err])
-
-            # Use the jacobian to compute a local approximation
-            j_eef = control_dict[f"{self.task_name}_jacobian_relative"][:, self.dof_idx]
-            j_eef_pinv = th.linalg.pinv(j_eef)
-            delta_j = j_eef_pinv @ err
-            target_joint_pos = current_joint_pos + delta_j
-
-            # Clip values to be within the joint limits
-            joint_pos_desired = target_joint_pos.clamp(
-                min=self._control_limits[ControlType.get_type("position")][0][self.dof_idx],
-                max=self._control_limits[ControlType.get_type("position")][1][self.dof_idx],
-            )
-        #--------------------------------------------------------------------------------
         # Assuming arm name is 0 and there is only one arm
         jacobian = control_dict["eef_0_jacobian_relative"].to(og.sim.device)[:, :7]
 
         assert jacobian.shape == (6, 7)
+        # for n in control_dict.get_fcn_names():
+        #     print(n, control_dict[n])
 
-        #joint_pos_desired = goal_dict["target_joint_pos"].to(og.sim.device)
-        #joint_vel_desired = goal_dict["target_joint_vel"].to(og.sim.device)
-        joint_vel_desired = th.zeros(7)  # TODO: maybe this also needs to have gripper
+        #--------------------------------------------------------------------------------
+        pos_current = control_dict[f"{self.task_name}_pos_relative"]
+        quat_current = control_dict[f"{self.task_name}_quat_relative"]
+        rpy_current = th.from_numpy(R.from_quat(quat_current.numpy()).as_euler('xyz'))
+
+        # If the delta is really small, we just keep the current joint position. This avoids joint
+        # drift caused by IK solver inaccuracy even when zero delta actions are provided.
+        if self.mode not in ["cartesian_velocity"] and th.allclose(pos_current, goal_dict["target_pos"], atol=1e-4) and th.allclose(quat_current, goal_dict["target_quat"], atol=1e-4):
+            joint_pos_desired = current_joint_pos
+        else:
+            # Compute the pose error. Note that this is computed NOT in the EEF frame but still
+            # in the base frame.
+            # pos_err = goal_dict["target_pos"] - pos_current
+            # ori_err = orientation_error(T.quat2mat(goal_dict["target_quat"]), T.quat2mat(quat_current))
+            # err = th.cat([pos_err, ori_err])
+            #
+            # # Use the jacobian to compute a local approximation
+            # j_eef = jacobian
+            # j_eef_pinv = th.linalg.pinv(j_eef)
+            # delta_j = j_eef_pinv @ err
+            #
+            # target_joint_pos = current_joint_pos + delta_j
+            #
+            # # Clip values to be within the joint limits
+            # joint_pos_desired = target_joint_pos.clamp(
+            #     min=self._control_limits[ControlType.get_type("position")][0][self.dof_idx],
+            #     max=self._control_limits[ControlType.get_type("position")][1][self.dof_idx],
+            # )
+
+            action_dict = {}
+            if self.mode == "cartesian_velocity":
+                action_dict["cartesian_velocity"] = th.cat([goal_dict["target_cartesian_pos_vel"], goal_dict["target_cartesian_rot_vel"]])
+                action_dict["cartesian_delta"] = self._ik_solver.cartesian_velocity_to_delta(action_dict["cartesian_velocity"])
+            elif self.mode == "pose_delta_ori":
+                action_dict["cartesian_delta"] = th.cat([goal_dict["target_pos_relative"], goal_dict["target_rpy_relative"]])
+                cartesian_velocity = self._ik_solver.cartesian_delta_to_velocity(action_dict["cartesian_delta"])
+                action_dict["cartesian_velocity"] = cartesian_velocity.tolist()
+            elif self.mode == "absolute_pose":
+                action_dict["cartesian_position"] = th.cat([goal_dict["target_pos"], goal_dict["target_rpy"]])
+                current_cartesian_position = th.cat([pos_current, rpy_current])
+                cartesian_delta = th.from_numpy(pose_diff(action_dict["cartesian_position"], current_cartesian_position))
+                cartesian_velocity = self._ik_solver.cartesian_delta_to_velocity(cartesian_delta)
+                action_dict["cartesian_velocity"] = cartesian_velocity.tolist()
+            else:
+                raise NotImplementedError()
+
+            action_dict["joint_velocity"] = self._ik_solver.cartesian_velocity_to_joint_velocity(
+                action_dict["cartesian_velocity"], robot_state={
+                    "joint_positions": current_joint_pos,
+                    "joint_velocities": current_joint_vel
+                }
+            ).tolist()
+            joint_delta = self._ik_solver.joint_velocity_to_delta(action_dict["joint_velocity"])
+            action_dict["joint_position"] = (joint_delta + np.array(current_joint_pos)).tolist()
+            joint_pos_desired = th.tensor(action_dict["joint_position"], dtype=th.float32, device=og.sim.device)
+
+        #--------------------------------------------------------------------------------
+        #joint_pos_desired = th.from_numpy(self.gt_traj[min(floor(self.time_tracker / 8), len(self.gt_traj) - 1)])
+        joint_vel_desired = th.zeros(7).to(og.sim.device)  # TODO: maybe this also needs to have gripper
 
         Kp = jacobian.T @ self.Kx @ jacobian + self.Kq
         Kd = jacobian.T @ self.Kxd @ jacobian + self.Kqd
+
+        # Ensure current_joint_vel is a tensor on the correct device
+        if isinstance(current_joint_vel, list):
+             current_joint_vel = th.tensor(current_joint_vel, dtype=th.float32, device=og.sim.device)
 
         u_feedback = Kp @ (joint_pos_desired - current_joint_pos) + Kd @ (joint_vel_desired - current_joint_vel)
         u_feedforward = th.zeros_like(u_feedback)
@@ -263,3 +323,14 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
     @property
     def command_dim(self):
         return IK_MODE_COMMAND_DIMS[self.mode]
+
+    def _scale_cartesian_6d_velocity(self, lin_vel, rot_vel):
+        max_lin_delta = 0.075
+        max_rot_delta = 0.15
+        lin_vel_norm = th.linalg.norm(lin_vel)
+        rot_vel_norm = th.linalg.norm(rot_vel)
+        if lin_vel_norm > max_lin_delta:
+            lin_vel = lin_vel * max_lin_delta / lin_vel_norm
+        if rot_vel_norm > max_rot_delta:
+            rot_vel = rot_vel * max_rot_delta / rot_vel_norm
+        return lin_vel, rot_vel
