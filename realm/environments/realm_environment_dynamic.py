@@ -565,7 +565,6 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         for obj in self.main_objects:
             for link in obj._links.values():
                 link.mass = min(link.mass * s, 2.0) # clip at 2.0kg payload
-                link.mass *= s
 
             for joint in obj.joints.values():
                 joint: JointPrim
