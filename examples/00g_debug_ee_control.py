@@ -33,7 +33,7 @@ gm.USE_GPU_DYNAMICS = True
 gm.ENABLE_HQ_RENDERING = False #True
 gm.ENABLE_FLATCACHE = False #True
 
-ep_id = "episode_000000"
+ep_id = "episode_000001"
 action_cartesian_pos = np.load(f"data/droid_1.0.1/{ep_id}_action.cartesian_position.npy", allow_pickle=True)
 action_qpos = np.load(f"data/droid_1.0.1/{ep_id}_action.joint_position.npy", allow_pickle=True)
 

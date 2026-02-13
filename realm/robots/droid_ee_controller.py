@@ -177,33 +177,21 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
         quat_current = control_dict[f"{self.task_name}_quat_relative"]
         rpy_current = th.from_numpy(R.from_quat(quat_current.numpy()).as_euler('xyz'))
 
-        # goal_dict["target_quat"] = th.tensor([1, 0, 0, 0])
-        # goal_dict["target_rpy"] = th.tensor([3.013, -0.28, -0.263])
-
         # If the delta is really small, we just keep the current joint position. This avoids joint
         # drift caused by IK solver inaccuracy even when zero delta actions are provided.
         if self.mode not in ["cartesian_velocity"] and th.allclose(pos_current, goal_dict["target_pos"], atol=1e-4) and th.allclose(quat_current, goal_dict["target_quat"], atol=1e-4):
             joint_pos_desired = current_joint_pos
         else:
-            # # Compute the pose error. Note that this is computed NOT in the EEF frame but still
-            # # in the base frame.
-            # pos_err = target_pos - pos_relative
-            # #print("pos_err:", pos_err)
-            # ori_err = orientation_error(T.quat2mat(target_quat), T.quat2mat(quat_relative))
+            # Compute the pose error. Note that this is computed NOT in the EEF frame but still
+            # in the base frame.
+            # pos_err = goal_dict["target_pos"] - pos_current
+            # ori_err = orientation_error(T.quat2mat(goal_dict["target_quat"]), T.quat2mat(quat_current))
             # err = th.cat([pos_err, ori_err])
             #
             # # Use the jacobian to compute a local approximation
             # j_eef = jacobian
             # j_eef_pinv = th.linalg.pinv(j_eef)
             # delta_j = j_eef_pinv @ err
-            #
-            # # DROID logic:
-            # joint_velocity = delta_j / 0.2
-            # max_joint_vel_norm = (th.abs(joint_velocity)).max()
-            # if max_joint_vel_norm > 1:
-            #     joint_velocity = joint_velocity / max_joint_vel_norm
-            # delta_j = joint_velocity * 0.2
-            # # ===========
             #
             # target_joint_pos = current_joint_pos + delta_j
             #
