@@ -144,6 +144,12 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
         target_pos = goal_dict["target_pos"]
         target_quat = goal_dict["target_quat"]
 
+        assert  th.allclose(
+            goal_dict["target_ori_mat"], # from BEHAVIOR-1K
+            T.mat2quat(target_quat), # ours
+            atol=1e-4
+        )
+
         # If the delta is really small, we just keep the current joint position. This avoids joint
         # drift caused by IK solver inaccuracy even when zero delta actions are provided.
         if th.allclose(pos_relative, target_pos, atol=1e-4) and th.allclose(quat_relative, target_quat, atol=1e-4):

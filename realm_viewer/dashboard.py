@@ -16,24 +16,50 @@ LOGS_DIR = "logs"
 # Initialize session state for selection
 if "selected_experiment" not in st.session_state:
     st.session_state.selected_experiment = None
+if "video_count" not in st.session_state:
+    st.session_state.video_count = 10
+if "last_experiment_viewed" not in st.session_state:
+    st.session_state.last_experiment_viewed = None
+
+# --- Caching Wrapper Functions ---
+@st.cache_data(ttl=60)
+def get_cached_subdirectories(path):
+    return dashboard_utils.get_subdirectories(path)
+
+@st.cache_data(ttl=60)
+def get_cached_is_experiment_folder(path):
+    return dashboard_utils.is_experiment_folder(path)
+
+@st.cache_data(ttl=10)
+def get_cached_reports(path):
+    return dashboard_utils.load_reports(path)
+
+@st.cache_data(ttl=10)
+def get_cached_videos(path):
+    return dashboard_utils.get_videos(path)
+
+@st.cache_data(ttl=60)
+def get_cached_experiment_metadata(path):
+    return dashboard_utils.load_experiment_metadata(path)
+# ---------------------------------
 
 def render_tree(path, depth=0):
     """Recursive function to render the directory tree using expanders."""
     if depth > 5:
         return
 
-    subdirs = dashboard_utils.get_subdirectories(path)
+    subdirs = get_cached_subdirectories(path)
     if not subdirs:
         return
 
     for d in subdirs:
         full_path = os.path.join(path, d)
-        is_exp = dashboard_utils.is_experiment_folder(full_path)
+        is_exp = get_cached_is_experiment_folder(full_path)
 
         # Unique key for widgets
         key_base = full_path
 
-        sub_subdirs = dashboard_utils.get_subdirectories(full_path)
+        sub_subdirs = get_cached_subdirectories(full_path)
         has_children = len(sub_subdirs) > 0
 
         if has_children:
@@ -96,6 +122,11 @@ with st.sidebar.expander("Filter by Perturbation", expanded=False):
 
 # Main Content
 if st.session_state.selected_experiment and os.path.exists(st.session_state.selected_experiment):
+    # Reset video count if experiment changed
+    if st.session_state.selected_experiment != st.session_state.last_experiment_viewed:
+        st.session_state.video_count = 10
+        st.session_state.last_experiment_viewed = st.session_state.selected_experiment
+
     selected_path = st.session_state.selected_experiment
 
     # Header Parsing
@@ -116,7 +147,7 @@ if st.session_state.selected_experiment and os.path.exists(st.session_state.sele
     st.divider()
 
     # Load Reports
-    raw_df = dashboard_utils.load_reports(selected_path)
+    raw_df = get_cached_reports(selected_path)
 
     # Apply filters to dataframe
     df = dashboard_utils.filter_dataframe(raw_df, selected_tasks, selected_perts)
@@ -134,7 +165,7 @@ if st.session_state.selected_experiment and os.path.exists(st.session_state.sele
             experiment_name = parts[0]
             experiment_path = os.path.join(LOGS_DIR, experiment_name)
 
-            metadata, err = dashboard_utils.load_experiment_metadata(experiment_path)
+            metadata, err = get_cached_experiment_metadata(experiment_path)
 
             if metadata:
                 tasks_indices = metadata.get("task_ids", [])
@@ -236,7 +267,7 @@ if st.session_state.selected_experiment and os.path.exists(st.session_state.sele
 
     # Videos Section (Uses Filters)
     st.header("Videos")
-    videos = dashboard_utils.get_videos(selected_path)
+    videos = get_cached_videos(selected_path)
 
     # Filter videos
     filtered_videos = dashboard_utils.filter_videos(videos, selected_tasks, selected_perts)
@@ -244,10 +275,19 @@ if st.session_state.selected_experiment and os.path.exists(st.session_state.sele
     if filtered_videos:
         # Tiled viewer with 3 columns
         cols = st.columns(3)
-        for i, video_path in enumerate(filtered_videos):
+        
+        # Pagination
+        videos_to_show = filtered_videos[:st.session_state.video_count]
+        
+        for i, video_path in enumerate(videos_to_show):
             with cols[i % 3]:
                 st.video(video_path)
                 st.caption(os.path.basename(video_path))
+        
+        if st.session_state.video_count < len(filtered_videos):
+            if st.button("Load More"):
+                st.session_state.video_count += 10
+                st.rerun()
     else:
         if videos:
             st.info("No videos match the selected filters.")
