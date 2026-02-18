@@ -72,7 +72,8 @@ def evaluate(
         model="pi0_FAST",
         port=8000,
         log_dir="/app/logs",
-        resume_run_id=None
+        resume=False,
+        multi_view=False
 ):
     start = time.perf_counter()
     og.log.info(f"DEBUG: Begin eval: {time.perf_counter() - start:.4f}s")
@@ -91,28 +92,29 @@ def evaluate(
     env = RealmEnvironmentDynamic(
         config_path="/app/realm/config",
         task=task,
-        perturbations=perturbations
+        perturbations=perturbations,
+        multi_view=multi_view
     )
     og.log.info(f"DEBUG: Env created: {time.perf_counter() - start:.4f}s")
 
-    if resume_run_id:
+    results = []
+    start_repeat = 0
+    csv_filename = None
+
+    if resume:
         # find matching file
-        search_pattern = os.path.join(log_dir, "reports", f"{resume_run_id}*report.csv")
-        matches = glob.glob(search_pattern)
-        if not matches:
-            raise ValueError(f"Could not find run report to resume with ID {resume_run_id}")
-        csv_filename = matches[0]
-        # read existing results
-        with open(csv_filename, 'r') as f:
-            reader = csv.DictReader(f)
-            existing_results = list(reader)
-        results = existing_results
-        start_repeat = len(results)
-        og.log.info(f"Resuming run {resume_run_id} from repeat {start_repeat}. Using file: {csv_filename}")
-    else:
-        results = []
-        start_repeat = 0
-        csv_filename = None
+        potential_filename = os.path.join(log_dir, "reports", f"{task}_{perturbations[0]}.csv")
+        if os.path.exists(potential_filename):
+            csv_filename = potential_filename
+            # read existing results
+            with open(csv_filename, 'r') as f:
+                reader = csv.DictReader(f)
+                existing_results = list(reader)
+            results = existing_results
+            start_repeat = len(results)
+            og.log.info(f"Resuming run from repeat {start_repeat}. Using file: {csv_filename}")
+        else:
+            og.log.info(f"Resume requested but no report found at {potential_filename}. Starting fresh.")
 
     for run_id in range(repeats):
         # ------------------------ pre-configure each run --------------------------------
@@ -127,7 +129,7 @@ def evaluate(
 
         timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H:%M:%S")
 
-        video_recorder = VideoRecorder(log_dir, timestamp, run_id)
+        video_recorder = VideoRecorder(log_dir, timestamp, run_id, task, perturbations[0])
 
         qpos = []
         actions = []
@@ -197,7 +199,7 @@ def evaluate(
                 else:
                     action_buffer.put(pred_action_chunk)
 
-            video_recorder.add_frame(base_im, wrist_im)
+            video_recorder.add_frame(base_im, wrist_im, base_im_second)
 
             qpos.append(np.concatenate((robot_state, np.atleast_1d(np.array(gripper_state)))))
 

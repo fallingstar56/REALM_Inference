@@ -97,6 +97,24 @@ OMNIGIBSON_HEADLESS=1 python /app/examples/02_eval_dynamic_scenes.py \
     --model pi0_FAST
 ```
 
+### Resume Functionality 🔄
+If a benchmarking run is interrupted (e.g., due to a timeout or crash), you can resume it from where it left off.
+
+To resume a run, you must provide the `--resume` flag AND the `--run-id` of the run you wish to resume. The `run-id` corresponds to the timestamp folder name created in your logs directory (e.g., `20240101_120000`).
+
+Example using the cluster script:
+```bash
+./scripts/karolina/run_evals_for_ckpt.sh \
+    ... (other args) ... \
+    --run-id 20240101_120000 \
+    --resume
+```
+
+**⚠️ Important Pitfalls:**
+*   **Correct Run ID:** You **must** provide the exact `run-id` (timestamp) of the previous run. If you omit it, a new timestamp will be generated, and the script will look for reports in a new (empty) directory, effectively starting a fresh run.
+*   **Identical Configuration:** Ensure all other arguments (task IDs, perturbation IDs, model, etc.) match the original run. Changing parameters might lead to inconsistent results or errors.
+*   **Granularity:** Resuming happens at the granularity of individual evaluation repeats. If a repeat was interrupted halfway, it will be restarted from the beginning. Completed repeats will be skipped.
+
 | PERTURBATION_ID | Perturbation | Description                                                                                     | Category |
 |:----------------| :--- |:------------------------------------------------------------------------------------------------| :--- |
 | 0               | **Default** | Testing a skill under no specific perturbations.                                                | General |

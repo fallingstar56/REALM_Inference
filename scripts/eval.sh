@@ -56,6 +56,8 @@ Rest of options:
 
   -e, --environment ENV      Evaluation environment: singularity | docker | current
                              Default: singularity
+  
+  --multi-view               Enable multi-view camera (adds a second external camera)
 
 Other:
   -h, --help                 Show this help and exit
@@ -84,12 +86,17 @@ MAX_STEPS=500
 MODEL="pi0"
 CKPT_PATH=""             # required
 EVAL_ENV="singularity"
+MULTI_VIEW=false
 
 # --------------------------------------------------------------------------------------
 # Parse flag arguments
 # --------------------------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --multi-view)
+            MULTI_VIEW=true
+            shift
+            ;;
         -p|--perturbation-id)
             if [[ $# -lt 2 ]]; then
                 echo "Error: --perturbation-id requires a value" >&2
@@ -589,6 +596,11 @@ mkdir -p "$REALM_ROOT/.cache/pip"
 # TODO: evaluation part should not depend on model or ckpt_path
 # If you want to use it only for naming then just a prefix should be passed
 
+MULTI_VIEW_FLAG=""
+if [ "$MULTI_VIEW" = true ]; then
+    MULTI_VIEW_FLAG="--multi-view"
+fi
+
 case "$EVAL_ENV" in
     singularity)
         if [[ -z "${REALM_SIF:-}" ]]; then
@@ -626,7 +638,8 @@ case "$EVAL_ENV" in
                 --repeats $REPEATS \
                 --max_steps $MAX_STEPS \
                 --model $MODEL \
-                --port $PORT
+                --port $PORT \
+                $MULTI_VIEW_FLAG
         ;;
     docker)
         docker run \
@@ -652,7 +665,8 @@ case "$EVAL_ENV" in
                 --repeats $REPEATS \
                 --max_steps $MAX_STEPS \
                 --model $MODEL \
-                --port $PORT
+                --port $PORT \
+                $MULTI_VIEW_FLAG
         ;;
     current)
         micromamba run -n omnigibson python -u examples/02_eval_dynamic_scenes.py \
@@ -661,7 +675,8 @@ case "$EVAL_ENV" in
             --repeats $REPEATS \
             --max_steps $MAX_STEPS \
             --model $MODEL \
-            --port $PORT
+            --port $PORT \
+            $MULTI_VIEW_FLAG
         ;;
 esac
 

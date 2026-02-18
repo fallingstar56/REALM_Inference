@@ -10,6 +10,8 @@
 #---------------------------------------------------------------------------------
 
 DEBUG=false
+MULTI_VIEW=false
+
 while [[ "$#" -gt 0 ]]; do
   case $1 in
     --policy_config) POLICY_CONFIG="$2"; shift 2 ;;
@@ -23,6 +25,7 @@ while [[ "$#" -gt 0 ]]; do
     --perturbation_id) PERTURBATION_ID="$2"; shift 2 ;;
     --run_id) RUN_ID="$2"; shift 2 ;;
     --debug) DEBUG=true; shift 1;;
+    --multi-view) MULTI_VIEW=true; shift 1;;
     *) shift ;;
   esac
 done
@@ -95,4 +98,5 @@ apptainer exec \
   --model $MODEL_NAME \
   --port $port \
   --run_id $RUN_ID \
-  --experiment_name $EXPERIMENT_NAME
+  --experiment_name $EXPERIMENT_NAME \
+  --multi-view $MULTI_VIEW

@@ -10,6 +10,7 @@ MAX_STEPS=800
 REPEATS=25
 RUN_ID=$(date +%Y%m%d_%H%M%S)
 DEBUG=false
+MULTI_VIEW_FLAG=""
 
 expand_ids() {
   echo "$1" | tr ',' '\n' | while read -r r; do
@@ -29,6 +30,7 @@ while [[ "$#" -gt 0 ]]; do
     --task_ids) T_RAW="$2"; mapfile -t TASK_IDS < <(expand_ids "$2"); shift 2 ;;
     --perturbation_ids) P_RAW="$2"; mapfile -t PERT_IDS < <(expand_ids "$2"); shift 2 ;;
     --debug) DEBUG=true; shift 1;;
+    --multi-view) MULTI_VIEW_FLAG="--multi-view"; shift 1;;
     *) shift ;;
   esac
 done
@@ -70,6 +72,7 @@ for i in "${TASK_IDS[@]}"; do
       --base_port "$BASE_PORT" \
       --experiment_name "$EXPERIMENT_NAME" \
       --run_id "$RUN_ID" \
-      $debug_flag
+      $debug_flag \
+      $MULTI_VIEW_FLAG
   done
 done

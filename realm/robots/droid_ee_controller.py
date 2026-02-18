@@ -163,8 +163,6 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
 
     def compute_control(self, goal_dict, control_dict):
         self.time_tracker += 1
-        # if self.time_tracker % gm.DEFAULT_SIM_STEP_FREQ != 0:
-        #     return self.cached_torque
         current_joint_pos = control_dict["joint_position"][self.dof_idx].to(og.sim.device)
         current_joint_vel = control_dict["joint_velocity"][self.dof_idx].to(og.sim.device)
 

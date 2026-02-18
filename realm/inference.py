@@ -6,7 +6,11 @@ import omnigibson as og
 
 def extract_from_obs(obs: dict):
     base_im = obs['external']['external_sensor0']['rgb'].cpu().numpy()[..., :3]
-    base_im_second = obs['external']['external_sensor1']['rgb'].cpu().numpy()[..., :3]
+    if 'external_sensor1' in obs['external']:
+        base_im_second = obs['external']['external_sensor1']['rgb'].cpu().numpy()[..., :3]
+    else:
+        base_im_second = None
+
     wrist_im = obs['franka']['franka:gripper_link_camera:Camera:0']['rgb'].cpu().numpy()[..., :3]
     proprio = obs['franka']['proprio'].cpu().numpy()
     robot_state = proprio[:7]

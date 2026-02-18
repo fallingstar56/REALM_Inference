@@ -16,6 +16,8 @@ if __name__ == "__main__":
     parser.add_argument('--experiment_name', type=str, required=True)
     parser.add_argument('--run_id', type=str, required=False, default=None)
     parser.add_argument('--log_dir', type=str, required=False, default=None)
+    parser.add_argument('--multi-view', action='store_true', help='Enable multi-view camera')
+    parser.add_argument('--resume', action='store_true', help='Resume from existing run report if found')
     args = parser.parse_args()
     assert args.model_name is not None
     assert args.experiment_name is not None
@@ -31,7 +33,9 @@ if __name__ == "__main__":
         max_steps=args.max_steps,
         model=args.model_name,
         port=args.port,
-        log_dir=log_dir
+        log_dir=log_dir,
+        multi_view=args.multi_view,
+        resume=args.resume
     )
     og.shutdown()
     sys.exit(0)

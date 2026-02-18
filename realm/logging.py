@@ -25,13 +25,18 @@ def save_results_to_csv(results, log_dir, task, perturbation, filename=None):
     return csv_results_filename
 
 class VideoRecorder:
-    def __init__(self, log_dir, timestamp, run_id):
-        self.temp_frame_dir = os.path.join(log_dir, f"{timestamp}_frames_{run_id}")
+    def __init__(self, log_dir, timestamp, run_id, task=None, perturbation=None):
+        suffix = ""
+        if task:
+            suffix += f"_{task}"
+        if perturbation:
+            suffix += f"_{perturbation}"
+        self.temp_frame_dir = os.path.join(log_dir, f"{timestamp}_frames_{run_id}{suffix}")
         os.makedirs(self.temp_frame_dir, exist_ok=True)
         self.frame_filenames = []
         self.count = 0
 
-    def add_frame(self, base_im, wrist_im):
+    def add_frame(self, base_im, wrist_im, base_im_second=None):
         # Ensure images are uint8
         if base_im.dtype.kind == 'f':
             base_im = (base_im * 255).astype(np.uint8)
@@ -43,24 +48,44 @@ class VideoRecorder:
         elif wrist_im.dtype != np.uint8:
             wrist_im = wrist_im.astype(np.uint8)
 
+        if base_im_second is not None:
+            if base_im_second.dtype.kind == 'f':
+                base_im_second = (base_im_second * 255).astype(np.uint8)
+            elif base_im_second.dtype != np.uint8:
+                base_im_second = base_im_second.astype(np.uint8)
+
         # Check if resizing is needed
-        if base_im.shape[:2] != wrist_im.shape[:2]:
-            base_pixels = base_im.shape[0] * base_im.shape[1]
-            wrist_pixels = wrist_im.shape[0] * wrist_im.shape[1]
+        target_size = (base_im.shape[1], base_im.shape[0]) # (width, height)
+        
+        if wrist_im.shape[:2] != base_im.shape[:2]:
+            wrist_im = np.array(Image.fromarray(wrist_im).resize(target_size))
+            
+        if base_im_second is not None and base_im_second.shape[:2] != base_im.shape[:2]:
+            base_im_second = np.array(Image.fromarray(base_im_second).resize(target_size))
 
-            if base_pixels > wrist_pixels:
-                # Resize base to match wrist
-                new_size = (wrist_im.shape[1], wrist_im.shape[0])
-                base_im = np.array(Image.fromarray(base_im).resize(new_size))
-            else:
-                # Resize wrist to match base
-                new_size = (base_im.shape[1], base_im.shape[0])
-                wrist_im = np.array(Image.fromarray(wrist_im).resize(new_size))
+        if base_im_second is not None:
+            # Create black padding image
+            padding = np.zeros_like(base_im)
+            
+            # Create 2x2 grid
+            # Row 1: base_im, base_im_second
+            top_row = np.concatenate((base_im, base_im_second), axis=1)
+            # Row 2: wrist_im, padding
+            bottom_row = np.concatenate((wrist_im, padding), axis=1)
+            
+            frame_img = np.concatenate((top_row, bottom_row), axis=0)
+        else:
+            frame_img = np.concatenate((
+                base_im,
+                wrist_im,
+            ), axis=1)
 
-        frame_img = np.concatenate((
-            base_im,
-            wrist_im,
-        ), axis=1)
+        # Downsize to 480p
+        target_height = 480
+        h, w = frame_img.shape[:2]
+        if h > target_height:
+            new_w = int(w * (target_height / h))
+            frame_img = np.array(Image.fromarray(frame_img).resize((new_w, target_height)))
 
         # Ensure dimensions are even for H.264 compatibility
         h, w = frame_img.shape[:2]

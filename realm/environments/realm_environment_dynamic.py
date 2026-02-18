@@ -38,9 +38,11 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         task="put_green_block_in_bowl",
         perturbations=None,
         use_droid_with_base=True,
-        common_freq: int = None
+        common_freq: int = None,
+        multi_view: bool = False
     ) -> None:
         self.use_droid_with_base = use_droid_with_base # TODO: infer from task / scene config
+        self.multi_view = multi_view
         if self.use_droid_with_base:
             from realm.robots.franka_robotiq_mounted import FrankaPandaRobotiq
         else:
@@ -269,13 +271,19 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
             ext_cam2_pose = "default" if ext_cam1_pose == "CP3" else "CP3"
 
         base_cam_pos, base_cam_rot = self.construct_ext_cam_pose_by_name(ext_cam1_pose, robot_pos, robot_rot)
-        second_base_cam_pos, second_base_cam_rot = self.construct_ext_cam_pose_by_name(ext_cam2_pose, robot_pos, robot_rot)
 
         cfg_external_sensors = yaml.load(open(f"{self.config_path}/env/external_sensors/camera_config.yaml", "r"), Loader=yaml.FullLoader)
         cfg_external_sensors["external_sensors"][0]["position"] = base_cam_pos
         cfg_external_sensors["external_sensors"][0]["orientation"] = base_cam_rot
-        cfg_external_sensors["external_sensors"][1]["position"] = second_base_cam_pos
-        cfg_external_sensors["external_sensors"][1]["orientation"] = second_base_cam_rot
+
+        if self.multi_view:
+            second_base_cam_pos, second_base_cam_rot = self.construct_ext_cam_pose_by_name(ext_cam2_pose, robot_pos,
+                                                                                           robot_rot)
+            cfg_external_sensors["external_sensors"][1]["position"] = second_base_cam_pos
+            cfg_external_sensors["external_sensors"][1]["orientation"] = second_base_cam_rot
+        else:
+            del cfg_external_sensors["external_sensors"][1]
+        
         # Debugging camera view:
         # cfg_external_sensors["external_sensors"][1]["position"] = [-0.64, -1.7, 1.0625] #second_base_cam_pos
         # cfg_external_sensors["external_sensors"][1]["orientation"] = [ 0.2847762, -0.4648792, -0.7096336, 0.4463295 ] #second_base_cam_rot
