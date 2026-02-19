@@ -598,7 +598,9 @@ mkdir -p "$REALM_ROOT/.cache/pip"
 
 MULTI_VIEW_FLAG=""
 if [ "$MULTI_VIEW" = true ]; then
-    MULTI_VIEW_FLAG="--multi-view"
+    MULTI_VIEW_FLAG="--multi-view true"
+else
+    MULTI_VIEW_FLAG="--multi-view false"
 fi
 
 case "$EVAL_ENV" in

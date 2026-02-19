@@ -775,6 +775,10 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
             obj_relative_prim_path = mo._relative_prim_path
             new_bbox = self.mo_bbox_orig * np.array([s1, s2, s3])
 
+            obj_cfg = None
+            if type(mo) == DatasetObject:
+                obj_cfg = get_default_objects_cfg(self.omnigibson_env.scene, [mo.name])[obj_name]
+
             og.sim.stop()
             scene.remove_object(mo)
 
@@ -786,7 +790,6 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
                 fix_base = False
 
             if type(mo) == DatasetObject:
-                obj_cfg = get_default_objects_cfg(self.omnigibson_env.scene, [mo.name])[obj_name]
                 new_obj = DatasetObject(
                     name=obj_name,
                     relative_prim_path=obj_relative_prim_path, #obj_cfg["relative_prim_path"],
@@ -869,6 +872,9 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
                 cat_dict.pop(t[0])
             l = [o for v in cat_dict.values() for c in v.values() for o in c]
             l = [c for c in l if c not in excluded_categories]
+            if not l:
+                og.log.warning(f"v_sc: No suitable categories found to replace distractor {distractor.name} (category: {distractor.category}). Skipping.")
+                continue
             _, _ = self.replace_obj(distractor, included_categories=l, maximum_dim=0.12)
 
         og.sim.play()
@@ -978,8 +984,6 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
     def replace_obj(self, obj: DatasetObject, included_categories=None, maximum_dim=0.2, fixed_base=False, preserve_ori=True):
         obj_name = obj.name
 
-        self.omnigibson_env.scene.remove_object(obj)
-
         if not (included_categories is None) and len(included_categories) == 1 and "bottom_cabinet" in included_categories:
             bottom_cabinet_models = [
                 "bamfsz",
@@ -1008,7 +1012,12 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
                 "model": bottom_cabinet_models[sampled_idx],
             }
         else:
-            nobj_cfg = self.sample_objects(num_objects=1, included_categories=included_categories)[0]
+            candidates = self.sample_objects(num_objects=1, included_categories=included_categories)
+            if not candidates:
+                raise ValueError(f"replace_obj: No suitable objects found for categories: {included_categories}")
+            nobj_cfg = candidates[0]
+
+        self.omnigibson_env.scene.remove_object(obj)
 
         new_obj = DatasetObject(
             name=obj_name,
