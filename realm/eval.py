@@ -47,12 +47,14 @@ SUPPORTED_PERTURBATIONS = [
 ]
 
 
-def set_sim_config():
+def set_sim_config(rendering_mode=None):
     gm.DEFAULT_SIM_STEP_FREQ = 15
     gm.DEFAULT_RENDERING_FREQ = 15
     gm.DEFAULT_PHYSICS_FREQ = 120
     gm.ENABLE_TRANSITION_RULES = False # this needs to be off to avoid bug with sludge state during collision: https://github.com/StanfordVL/BEHAVIOR-1K/issues/1201
     gm.ENABLE_OBJECT_STATES = True # this needs to be on because push_switch task usees the ToggledOn state
+    gm.RENDER_VIEWER_CAMERA=False
+    gm.ENABLE_HQ_RENDERING = False if rendering_mode == "r" else True
 
     seed = 1234
     random.seed(seed)
@@ -78,7 +80,7 @@ def evaluate(
 ):
     start = time.perf_counter()
     og.log.info(f"DEBUG: Begin eval: {time.perf_counter() - start:.4f}s")
-    set_sim_config()
+    set_sim_config(rendering_mode=rendering_mode)
 
     # -------------------- Create the environment + client --------------------
     task = SUPPORTED_TASKS[task_id]

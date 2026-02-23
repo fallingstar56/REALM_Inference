@@ -40,7 +40,7 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         use_droid_with_base=True,
         common_freq: int = None,
         multi_view: bool = False,
-        rendering_mode: str = None
+        rendering_mode: str = "rt"
     ) -> None:
         self.use_droid_with_base = use_droid_with_base # TODO: infer from task / scene config
         self.multi_view = multi_view
@@ -111,34 +111,38 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         self.omnigibson_env = og.Environment(configs=[cfg])
         
         # Set rendering mode
-        if self.rendering_mode:
-            carb_settings = lazy.carb.settings.get_settings()
-            if self.rendering_mode == "pt":
-                def enable_interactive_path_tracing(carb_settings, samples_per_pixel=8):
-                    carb_settings.set("/rtx/rendermode", "PathTracing")
-                    if samples_per_pixel is not None:
-                        carb_settings.set_int("/rtx/pathtracing/spp", samples_per_pixel)
-                        carb_settings.set_int("/rtx/pathtracing/totalSpp", samples_per_pixel)
-                        carb_settings.set_int(
-                            "/rtx/pathtracing/useDirectLightingCache", False
-                        )  # NOTE: This is to enable lighting cache but can add temporal noise
-                    carb_settings.set_bool("/rtx/pathtracing/optixDenoiser/enabled", True)
+        carb_settings = lazy.carb.settings.get_settings()
+        if self.rendering_mode == "pt":
+            def enable_interactive_path_tracing(carb_settings, samples_per_pixel=8):
+                carb_settings.set("/rtx/rendermode", "PathTracing")
+                if samples_per_pixel is not None:
+                    carb_settings.set_int("/rtx/pathtracing/spp", samples_per_pixel)
+                    carb_settings.set_int("/rtx/pathtracing/totalSpp", samples_per_pixel)
+                    carb_settings.set_int(
+                        "/rtx/pathtracing/useDirectLightingCache", False
+                    )
+                carb_settings.set_bool("/rtx/pathtracing/optixDenoiser/enabled", True)
 
-                carb_settings.set("/persistent/omnihydra/useSceneGraphInstancing", True)
-                enable_interactive_path_tracing(carb_settings, samples_per_pixel=8)
-            elif self.rendering_mode == "r":
-                carb_settings.set("/rtx/rendermode", "RayTracedLighting")
-                carb_settings.set("/rtx/raytracing/enabled", False)
-                carb_settings.set("/rtx/reflections/enabled", False)
-                carb_settings.set("/rtx/translucency/enabled", False)
-                carb_settings.set("/rtx/post/aa/op", 0)
-                 # Assuming "RayTracedShadows" or standard rasterization.
-                 # Often "RayTracedLighting" is the default real-time mode.
-                 # "RayTracedShadows" usually implies rasterization with RT shadows.
-                 # carb_settings.set("/rtx/rendermode", "RayTracedShadows")
-            else:
-                assert self.rendering_mode == "rt", f"rendering mode must be 'pt', 'rt', or 'r'"
-                #carb_settings.set("/rtx/rendermode", "RayTracedLighting")
+            carb_settings.set("/persistent/omnihydra/useSceneGraphInstancing", True)
+            enable_interactive_path_tracing(carb_settings, samples_per_pixel=8)
+        elif self.rendering_mode == "r":
+            carb_settings.set_string("/rtx/rendermode", "RaytracedLighting")
+            carb_settings.set_bool("/rtx/translucency/enabled", True)
+            carb_settings.set_bool("/rtx/reflections/enabled", False)
+            carb_settings.set_bool("/rtx/indirectDiffuse/enabled", False)
+            carb_settings.set_bool("/rtx/directLighting/sampledLighting/enabled", True)
+            carb_settings.set_int("/rtx/directLighting/sampledLighting/samplesPerPixel", 1)
+            carb_settings.set_bool("/rtx/shadows/enabled", False)
+            carb_settings.set_int("/rtx/post/dlss/execMode", 0)
+            carb_settings.set_bool("/rtx/ambientOcclusion/enabled", False)
+            carb_settings.set_bool("/rtx-transient/dlssg/enabled", False)
+            carb_settings.set_float("/rtx-transient/resourcemanager/texturestreaming/memoryBudget", 0.6)
+            carb_settings.set_float("/rtx/sceneDb/ambientLightIntensity", 1.0)
+            carb_settings.set_bool("/exts/omni.renderer.core/present/enabled", False)
+            carb_settings.set_string("/isaaclab/rendering/rendering_mode", "performance")
+        else:
+            assert self.rendering_mode == "rt", f"rendering mode must be 'pt', 'rt', or 'r'"
+            #carb_settings.set("/rtx/rendermode", "RayTracedLighting")
 
         assert len(self.omnigibson_env.robots) == 1  # assumes single robot, single arm
         self.robot = self.omnigibson_env.robots[0]
