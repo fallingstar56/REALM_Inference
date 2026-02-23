@@ -8,14 +8,14 @@ import glob
 import csv
 import omnigibson as og
 from omnigibson.macros import gm
-from realm.environments.realm_environment_dynamic import RealmEnvironmentDynamic
+from realm.environments.env_dynamic import RealmEnvironmentDynamic
 from realm.inference import InferenceClient, extract_from_obs
 from realm.logging import VideoRecorder, save_results_to_csv
 import time
 
 
 SUPPORTED_TASKS = [
-    "put_green_block_in_bowl", #0
+    "put_green_block_into_bowl", #0
     "put_banana_into_box", #1
     "rotate_marker", #2
     "rotate_mug", #3
@@ -84,6 +84,8 @@ def evaluate(
 
     # -------------------- Create the environment + client --------------------
     task = SUPPORTED_TASKS[task_id]
+    #task_cfg_path = f"REALM_DROID10/{task}/default.yaml"
+    task_cfg_path = f"IMPACT/pick_spoon/default.yaml" # TODO: revert
     perturbations = [SUPPORTED_PERTURBATIONS[perturbation_id]]
 
     os.makedirs(log_dir, exist_ok=True)
@@ -94,7 +96,7 @@ def evaluate(
 
     env = RealmEnvironmentDynamic(
         config_path="/app/realm/config",
-        task=task,
+        task_cfg_path=task_cfg_path,
         perturbations=perturbations,
         multi_view=multi_view,
         rendering_mode=rendering_mode

@@ -6,16 +6,21 @@ import random
 import copy
 import os
 
-from realm.environments.task_progressions import TASK_PROGRESSIONS
-from realm.helpers import (calculate_new_camera_pose_mixed_rotations, add_rotation_noise,
-                           get_non_colliding_positions_for_objects_v2, apply_blur_and_contrast,
-                           get_non_droid_categories, get_droid_categories_by_theme,
-                           get_objects_by_names, get_default_objects_cfg)
+from realm.environments.env_base import RealmEnvironmentBase, TASK_PROGRESS_RUBRICS
+from realm.helpers import (
+    calculate_new_camera_pose_mixed_rotations,
+    add_rotation_noise,
+    get_non_colliding_positions_for_objects,
+    apply_blur_and_contrast,
+    get_non_droid_categories,
+    get_droid_categories_by_theme,
+    get_objects_by_names,
+    get_default_objects_cfg
+)
 
 import omnigibson as og
 import omnigibson.utils.transform_utils as omnigibson_transform_utils
 import omnigibson.lazy as lazy
-from realm.environments.realm_environtment_base import RealmEnvironmentBase
 from omnigibson.objects import DatasetObject, PrimitiveObject, USDObject
 from omnigibson.utils.asset_utils import get_all_object_category_models
 from omnigibson.utils.asset_utils import get_all_object_models
@@ -35,14 +40,17 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         scene_model=None,
         scene_part=None,
         reset_qpos=None,
-        task="put_green_block_in_bowl",
+        task_cfg_path="REALM_DROID10/put_green_block_into_bowl/default.cfg",
         perturbations=None,
-        use_droid_with_base=True,
         common_freq: int = None,
         multi_view: bool = False,
         rendering_mode: str = "rt"
     ) -> None:
-        self.use_droid_with_base = use_droid_with_base # TODO: infer from task / scene config
+        task_cfg_path = "/".join(task_cfg_path.split("/")[-3:])
+        self.task_cfg_path = task_cfg_path
+
+        task_category = task_cfg_path.split("/")[0]
+        self.use_droid_with_base = True if task_category == "REALM_DROID10" else False # TODO: infer properly from the task/scene config yaml
         self.multi_view = multi_view
         self.rendering_mode = rendering_mode
         if self.use_droid_with_base:
@@ -50,8 +58,6 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         else:
             from realm.robots.franka_robotiq import FrankaPandaRobotiq
 
-
-        self.task = task
         self.config_path = config_path
         self.scene_model = scene_model
         self.scene_part = scene_part
@@ -177,54 +183,62 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         super().__init__(
             main_objects=self.main_objects,
             target_objects=self.target_objects,
-            task=self.task,
             task_type=self.task_type,
             robot=self.robot,
-            use_droid_with_base=use_droid_with_base,
             mo_cfgs=test_mo_cfg
         )
 
     def construct_environment_config(self):
         cfg = dict()
 
-        scene_config_path = f"{self.config_path}/tasks/{self.task}.yaml"
-        comprehensive_cfg = yaml.load(open(scene_config_path, "r"), Loader=yaml.FullLoader)
-        cfg.update(comprehensive_cfg)
+        task_config_path = f"{self.config_path}/tasks/{self.task_cfg_path}"
+        task_cfg = yaml.load(open(task_config_path, "r"), Loader=yaml.FullLoader)
+        cfg.update(task_cfg)
+
         # ---------------------------------------- scene config ----------------------------------------
         for k in ["external_sensors", "robots"]:
             assert k not in cfg, f"{k} should be defined outside the scene file!"
 
         if self.scene_model is None:
             assert self.scene_part is None
-            self.scene_model = list(comprehensive_cfg["supported_scenes"].keys())[0]
-            self.scene_part = comprehensive_cfg["supported_scenes"][self.scene_model][0]
-        assert self.scene_model in comprehensive_cfg["supported_scenes"]
-        assert self.scene_part in comprehensive_cfg["supported_scenes"][self.scene_model]
-        cfg.update(comprehensive_cfg["task"])
+            self.scene_model = list(task_cfg["supported_scenes"].keys())[0]
+            self.scene_part = task_cfg["supported_scenes"][self.scene_model][0]
+        assert self.scene_model in task_cfg["supported_scenes"]
+        assert self.scene_part in task_cfg["supported_scenes"][self.scene_model]
+        cfg.update(task_cfg["task"])
 
-        cfg["scene"] = {
-            "type": "InteractiveTraversableScene",
-            "scene_model": self.scene_model
-        }
+        scene_cfg_path = f"{self.config_path}/scenes/{self.scene_model}/{self.scene_part}/scene_definition.yaml"
+        scene_cfg = None
+        if os.path.exists(scene_cfg_path):
+            scene_cfg = yaml.load(open(scene_cfg_path, "r"), Loader=yaml.FullLoader)
+            cfg["scene"] = copy.deepcopy(scene_cfg["scene"])
+        else:
+            cfg["scene"] = {
+                "type": "InteractiveTraversableScene",
+                "scene_model": self.scene_model
+            }
 
-        spawn_config_path = f"{self.config_path}/scenes/scenes.yaml"
+        spawn_config_path = f"{self.config_path}/scenes/behavior1k_scenes.yaml"
         spawn_cfg = yaml.load(open(spawn_config_path, "r"), Loader=yaml.FullLoader)
         assert self.scene_model in spawn_cfg and self.scene_part in spawn_cfg[self.scene_model]
         scene_data = spawn_cfg[self.scene_model][self.scene_part]
-        x_min = scene_data["x_min"]
-        x_max = scene_data["x_max"]
-        y_min = scene_data["y_min"]
-        y_max = scene_data["y_max"]
-        z = scene_data["z"]
-        self.spawn_bbox = np.array([x_min, x_max, y_min, y_max, z])
+        if all(k in scene_data for k in ["x_min", "x_max", "y_min", "y_max", "z"]):
+            x_min = scene_data["x_min"]
+            x_max = scene_data["x_max"]
+            y_min = scene_data["y_min"]
+            y_max = scene_data["y_max"]
+            z = scene_data["z"]
+            self.spawn_bbox = np.array([x_min, x_max, y_min, y_max, z])
+        else:
+            self.spawn_bbox = None
 
         # ---------------------------------------- robot config ----------------------------------------
         assert "pos" in scene_data and "rot" in scene_data
         robot_pos = scene_data['pos']
         robot_rot = [math.radians(angle_deg) for angle_deg in scene_data['rot']]
         reset_joint_pos = np.zeros(11)
-        if "reset_joint_pos" in comprehensive_cfg:
-            reset_joint_pos[:7] = np.array(comprehensive_cfg['reset_joint_pos'])
+        if "reset_joint_pos" in task_cfg:
+            reset_joint_pos[:7] = np.array(task_cfg['reset_joint_pos'])
         elif "reset_joint_pos" in scene_data:
             reset_joint_pos[:7] = np.array(scene_data['reset_joint_pos'])
         else:
@@ -245,11 +259,13 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         self.reset_qpos = reset_joint_pos
 
         # ---------------------------------------- object config ----------------------------------------
-        obj_list = comprehensive_cfg["main_objects"] + comprehensive_cfg["target_objects"]
-        if "distractors" in comprehensive_cfg:
-            obj_list += comprehensive_cfg["distractors"]
-        if "immutables" in comprehensive_cfg:
-            obj_list += comprehensive_cfg["immutables"]
+        obj_list = task_cfg["main_objects"] + task_cfg["target_objects"]
+        if "distractors" in task_cfg:
+            obj_list += task_cfg["distractors"]
+        if "immutables" in task_cfg:
+            obj_list += task_cfg["immutables"]
+        if scene_cfg is not None:
+            obj_list += scene_cfg["objects"]
 
         robot_rot_deg_z = scene_data['rot'][-1]
         assert robot_rot_deg_z >= 0
@@ -258,49 +274,53 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         if 90 <= robot_rot_deg_z <= 270:
             obj_pos_modifier_x = -1
 
-        for obj in obj_list:
-            obj["relative_bbox_position"][0] *= obj_pos_modifier_x
-            if obj_pos_modifier_x != 1:
-                if obj["relative_bbox_position"][0] < 0:
-                    obj["relative_bbox_position"][0] -= obj_pos_modifier_x * (x_max - x_min)
-                else:
-                    obj["relative_bbox_position"][0] += obj_pos_modifier_x * (x_max - x_min)
-            obj["position"] = [x + y for x, y in zip(obj["relative_bbox_position"], [x_min, y_min, z])]
+        if self.spawn_bbox is not None:
+            for obj in obj_list:
+                obj["relative_bbox_position"][0] *= obj_pos_modifier_x
+                if obj_pos_modifier_x != 1:
+                    if obj["relative_bbox_position"][0] < 0:
+                        obj["relative_bbox_position"][0] -= obj_pos_modifier_x * (self.spawn_bbox[1] - self.spawn_bbox[0])
+                    else:
+                        obj["relative_bbox_position"][0] += obj_pos_modifier_x * (self.spawn_bbox[1] - self.spawn_bbox[0])
+                obj["position"] = [x + y for x, y in zip(obj["relative_bbox_position"], [self.spawn_bbox[0], self.spawn_bbox[2], self.spawn_bbox[4]])]
 
-        # TODO: the pipeline is broken for dynamically reducing # objects when there are too many distractors and
-        # they become unplaceable - 3 is always fine and easy to place so we use that for now as maximum
-        num_distractors = 3 if any(p in self.active_perturbations for p in ["V-SC"]) else 0 #"VB-ISC" #"SB-NOUN"
-        cfg["objects"] = None
-        excluded_categories = []
-        for obj in comprehensive_cfg["main_objects"] + comprehensive_cfg["target_objects"]:
-            if "category" in obj:
-                excluded_categories.append(obj["category"])
-        distractors = self.sample_objects(num_objects=num_distractors, excluded_categories=excluded_categories)
+            # TODO: the pipeline is broken for dynamically reducing # objects when there are too many distractors and
+            # they become unplaceable - 3 is always fine and easy to place so we use that for now as maximum
+            num_distractors = 3 if any(p in self.active_perturbations for p in ["V-SC"]) else 0 #"VB-ISC" #"SB-NOUN"
+            cfg["objects"] = None
+            excluded_categories = []
+            for obj in task_cfg["main_objects"] + task_cfg["target_objects"]:
+                if "category" in obj:
+                    excluded_categories.append(obj["category"])
+            distractors = self.sample_objects(num_objects=num_distractors, excluded_categories=excluded_categories)
 
-        cfg["objects"] = get_non_colliding_positions_for_objects_v2(
-                xmin=x_min,
-                xmax=x_max,
-                ymin=y_min,
-                ymax=y_max,
-                z=z,
+            cfg["objects"] = get_non_colliding_positions_for_objects(
+                xmin=self.spawn_bbox[0],
+                xmax=self.spawn_bbox[1],
+                ymin=self.spawn_bbox[2],
+                ymax=self.spawn_bbox[3],
+                z=self.spawn_bbox[4],
                 obj_cfg=obj_list + distractors,
                 max_attempts_per_object=25000,
                 main_object_names=[o["name"] for o in obj_list],
             )
+        else:
+            cfg["objects"] = obj_list
+            distractors = []
 
-        if "distractors" in comprehensive_cfg:
-            distractors += comprehensive_cfg["distractors"]
-        if "immutables" in comprehensive_cfg:
-            distractors += comprehensive_cfg["immutables"] # immutables go here because the distractor list above is meant to be replaceable objects
+        if "distractors" in task_cfg:
+            distractors += task_cfg["distractors"]
+        if "immutables" in task_cfg:
+            distractors += task_cfg["immutables"] # immutables go here because the distractor list above is meant to be replaceable objects
 
         # make sure positions exist
         for obj in cfg["objects"]:
             assert "position" in obj
 
         # ---------------------------------------- external camera config ----------------------------------------
-        ext_cam1_pose = comprehensive_cfg["camera_extrinsics"]["cam1"] if "camera_extrinsics" in comprehensive_cfg else "default"
-        if "camera_extrinsics" in comprehensive_cfg:
-            ext_cam2_pose = comprehensive_cfg["camera_extrinsics"]["cam2"]
+        ext_cam1_pose = task_cfg["camera_extrinsics"]["cam1"] if "camera_extrinsics" in task_cfg else "default"
+        if "camera_extrinsics" in task_cfg and "cam2" in task_cfg["camera_extrinsics"]:
+            ext_cam2_pose = task_cfg["camera_extrinsics"]["cam2"]
         else:
             ext_cam2_pose = "default" if ext_cam1_pose == "CP3" else "CP3"
 
@@ -317,18 +337,14 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
             cfg_external_sensors["external_sensors"][1]["orientation"] = second_base_cam_rot
         else:
             del cfg_external_sensors["external_sensors"][1]
-        
-        # Debugging camera view:
-        # cfg_external_sensors["external_sensors"][1]["position"] = [-0.64, -1.7, 1.0625] #second_base_cam_pos
-        # cfg_external_sensors["external_sensors"][1]["orientation"] = [ 0.2847762, -0.4648792, -0.7096336, 0.4463295 ] #second_base_cam_rot
 
         if "env" not in cfg:
             cfg["env"] = {}
         cfg["env"].update(cfg_external_sensors)
 
         return (cfg,
-                [o for o in comprehensive_cfg["main_objects"]],
-                [o for o in comprehensive_cfg["target_objects"]],
+                [o for o in task_cfg["main_objects"]],
+                [o for o in task_cfg["target_objects"]],
                 [o for o in distractors]
                 )
 
@@ -546,7 +562,7 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
                     obj.set_position_orientation(init_pos)
                     og.sim.play()
         else:
-            self.cfg["objects"] = get_non_colliding_positions_for_objects_v2(
+            self.cfg["objects"] = get_non_colliding_positions_for_objects(
                 xmin=self.spawn_bbox[0],
                 xmax=self.spawn_bbox[1],
                 ymin=self.spawn_bbox[2],
@@ -684,7 +700,7 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
 
         new_verb_for_task = random.choice(available_task_types)
         self.task_type = new_verb_for_task
-        self.task_progression = TASK_PROGRESSIONS[self.task_type]
+        self.task_progression = TASK_PROGRESS_RUBRICS[self.task_type]
 
         included_categories = None
         if self.task_type == "put":
@@ -719,7 +735,7 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
             obj_cfgs = copy.deepcopy(self.cfg["objects"])
             num_mo_to = len(obj_cfgs) - 1
 
-            self.cfg["objects"] = get_non_colliding_positions_for_objects_v2(
+            self.cfg["objects"] = get_non_colliding_positions_for_objects(
                 xmin=self.spawn_bbox[0],
                 xmax=self.spawn_bbox[1],
                 ymin=self.spawn_bbox[2],
@@ -822,16 +838,6 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
             else:
                 assert type(mo) == USDObject
                 raise NotImplementedError()
-                # new_obj = USDObject(
-                #     name=obj_name,
-                #     relative_prim_path=obj_relative_prim_path,
-                #     usd_path="/app/custom_assets/impact_drawer/usd/test_v123.usd",
-                #     bounding_box = torch.tensor(new_bbox, dtype=torch.float32),
-                #     fixed_base = fix_base
-                # )
-                # scene.add_object(new_obj)
-                # new_obj.set_position_orientation(torch.tensor(self.init_poses[new_obj._relative_prim_path]["pos"]),
-                #                        torch.tensor(self.init_poses[new_obj._relative_prim_path]["rot"]))
 
             self.main_objects = [new_obj]
             og.sim.play()
@@ -849,7 +855,7 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         self.cfg["objects"] = None
         num_distractors = len(obj_cfgs) - num_mo_to
 
-        self.cfg["objects"] = get_non_colliding_positions_for_objects_v2(
+        self.cfg["objects"] = get_non_colliding_positions_for_objects(
                 xmin=self.spawn_bbox[0],
                 xmax=self.spawn_bbox[1],
                 ymin=self.spawn_bbox[2],

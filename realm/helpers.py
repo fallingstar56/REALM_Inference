@@ -218,7 +218,7 @@ def process_droid_categories(original_dict, obj_category):
     return flattened_list
 
 
-def get_non_colliding_positions_for_objects_v2(
+def get_non_colliding_positions_for_objects(
         xmin, xmax, ymin, ymax, z, obj_cfg,
         main_object_names,
         min_separation=0.05,

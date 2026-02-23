@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from realm.environments.task_progressions import TASK_PROGRESSIONS
+from realm.environments.utils import *
 from realm.helpers import compute_rot_diff_magnitude
 from realm.robots.droid_joint_controller import IndividualJointPDController
 from realm.robots.droid_gripper_controller import MultiFingerGripperController
@@ -14,74 +14,11 @@ from omnigibson.prims.joint_prim import JointPrim, JointType
 from omnigibson.prims.rigid_prim import RigidPrim
 from omnigibson.objects.dataset_object import DatasetObject
 
+
 REGISTERED_CONTROLLERS["CustomJointController"] = IndividualJointPDController
 REGISTERED_CONTROLLERS["CustomGripperController"] = MultiFingerGripperController
 INIT_OPENNESS_FRACTION = 1.0 #0.5
-
-
-def reset_joints(
-        joints: list[JointPrim],
-        reset_states: list[float] = None,
-        closing_steps: int = 10,
-        still_steps: int = 5
-):
-    if reset_states is None:
-        reset_states = [-1.0 for _ in joints]
-    assert len(joints) == len(reset_states), f"{len(joints)=}, {len(reset_states)=}"
-    for step in range(closing_steps):
-        for j, target_state in zip(joints, reset_states):
-            #print(f"MYDEBUG: {__name__}: {step=}, {j.name=}, {j.get_state(normalized=True)=}, {target_state=}")
-            j.set_pos(target_state, normalized=True)
-            j.set_vel(0)
-            j.set_effort(0)
-        og.sim.step()
-    for step in range(still_steps):
-        for j in joints:
-            j.keep_still()
-        og.sim.step()
-
-
-def get_openable_joints(cabinet: DatasetObject) -> list[JointPrim]:
-    relevant_joints = _get_relevant_joints(cabinet)[1]
-    openable_joints = []
-    for j in relevant_joints:
-        if j.joint_type in (JointType.JOINT_PRISMATIC, JointType.JOINT_REVOLUTE):
-            openable_joints.append(j)
-    return openable_joints
-
-
-def get_target_drawer_joint(cabinet: DatasetObject, target_drawer_loc: str) -> JointPrim:
-    assert target_drawer_loc in ("top", "middle", "bottom"), f"{target_drawer_loc=}"
-
-    links: list[RigidPrim] = list(cabinet.links.values())
-    joints: list[JointPrim] = _get_relevant_joints(cabinet)[1]
-    path2link = {l.prim_path: l for l in links}
-    drawer_heights = []
-    for j in joints:
-        if j.joint_type != JointType.JOINT_PRISMATIC:
-            continue
-        drawer_link_path = j.body1
-        link = path2link[drawer_link_path]
-        z = link.aabb_center[-1].item()
-        drawer_heights.append((j, z))
-    drawer_heights = drawer_heights[-3:] # take max top 3 drawers, on the default nddvba this drops the hidden bottom one
-    if  len(drawer_heights) == 2:
-        if target_drawer_loc == "top":
-            target_joint = max(drawer_heights, key=lambda x: x[1])[0]
-        elif target_drawer_loc == "middle":
-            sorted_drawers = sorted(drawer_heights, key=lambda x: x[1])
-            target_joint = sorted_drawers[0][0]
-    else:
-        if target_drawer_loc == "top":
-            target_joint = max(drawer_heights, key=lambda x: x[1])[0]
-        elif target_drawer_loc == "bottom":
-            target_joint = min(drawer_heights, key=lambda x: x[1])[0]
-        elif target_drawer_loc == "middle":
-            assert len(drawer_heights) == 3, f"{len(drawer_heights)=}"
-            sorted_drawers = sorted(drawer_heights, key=lambda x: x[1])
-            target_joint = sorted_drawers[1][0]
-
-    return target_joint
+TASK_PROGRESS_RUBRICS = load_task_progressions()
 
 
 class RealmEnvironmentBase:
@@ -89,14 +26,10 @@ class RealmEnvironmentBase:
         self,
         main_objects,
         target_objects,
-        task,
         task_type,
         robot,
-        use_droid_with_base,
         mo_cfgs
     ):
-        self.use_droid_with_base = use_droid_with_base
-
         self.main_objects = main_objects
         self.target_objects = target_objects
 
@@ -104,30 +37,15 @@ class RealmEnvironmentBase:
         self.mo_rot_orig = np.array(mo_cfgs[0]["orientation"] if "orientation" in mo_cfgs[0] else [0, 0, 0, 1])
         self.mo_bbox_orig = np.array(mo_cfgs[0]["bounding_box"])
 
-        self.task = task
         self.task_type = task_type
         self.robot = robot
         self.robot_finger_links = {self.robot._links[link] for link in self.robot.finger_link_names[self.robot.default_arm]}
 
         self.was_lifted = False
-        # assert not (task_type in TASK_PROGRESSIONS and task in TASK_PROGRESSIONS)
-        if task_type in TASK_PROGRESSIONS:
-            self.task_progression = TASK_PROGRESSIONS[task_type]
-        elif task in TASK_PROGRESSIONS:
-            self.task_progression = TASK_PROGRESSIONS[task]
+        if task_type in TASK_PROGRESS_RUBRICS:
+            self.task_progression = TASK_PROGRESS_RUBRICS[task_type]
         else:
             self.task_progression = None
-
-        # if task_type in ["open_close_drawer"]:
-        #     #cabinet = self.omnigibson_env.scene.object_registry("name", "cabinet")
-        #     cabinet = main_objects[0]
-        #     assert cabinet.name == "cabinet" # TODO: get object name dynamically
-        #     relevant_joints = _get_relevant_joints(cabinet)[1]
-        #     self.mo_joint = relevant_joints[0] # TODO: get joint index dynamically
-        #     self.joint_range = self.mo_joint.upper_limit - self.mo_joint.lower_limit
-        #     self.init_openness_fraction = (self.mo_joint.get_state()[0][0] - self.mo_joint.lower_limit) / self.joint_range
-        # else:
-        #     self.mo_joint = None
 
         self.reset_joints()
 
@@ -159,18 +77,12 @@ class RealmEnvironmentBase:
     def  reset_joints(self, target_drawer_loc: str = "top"):
         if self.task_type in ["open_drawer", "close_drawer"]:
             cabinet = self.main_objects[0]
-            #assert cabinet.category in ("bottom_cabinet", "bottom_cabinet_no_top")
-            # relevant_joints = _get_relevant_joints(cabinet)[1]
             init_state_open = self.task_type == "close_drawer"
             self.mo_joint = get_target_drawer_joint(cabinet, target_drawer_loc=target_drawer_loc)
 
-            #self.mo_joint._articulation_view.set_max_velocities(torch.tensor([[0.2]]), joint_indices=self.mo_joint.dof_indices)
             self.mo_joint._articulation_view.set_max_efforts(torch.tensor([[1.0e8]], dtype=torch.float32), joint_indices=self.mo_joint.dof_indices)
             self.mo_joint._articulation_view.set_gains(kps=torch.tensor([[0.0]]), joint_indices=self.mo_joint.dof_indices)
             self.mo_joint._articulation_view.set_gains(kds=torch.tensor([[1000.0]]), joint_indices=self.mo_joint.dof_indices)
-            # self.mo_joint.set_attribute("physxJoint:jointFriction", 10.0)
-            # if og.sim.is_playing():
-            #     self.mo_joint._articulation_view.set_friction_coefficients(torch.tensor([[10.0]]), joint_indices=self.mo_joint.dof_indices)
 
             openable_joints = get_openable_joints(cabinet)
             reset_states = [-1 for _ in openable_joints]
@@ -191,6 +103,7 @@ class RealmEnvironmentBase:
         else:
             self.mo_joint = None
 
+    # ============================== [STATUS] ==============================
     def get_ee_pose(self):
         ee_link_name = self.robot.eef_link_names[self.robot.default_arm]
         ee_link = self.robot.links[ee_link_name]
@@ -352,9 +265,9 @@ class RealmEnvironmentBase:
 
     def check_touching_and_moved_mo_joint(self, obs, threshold=0.025):
         delta_openness_fraction = self.get_mo_joint_delta()
-        if self.task == "open_drawer":
+        if self.task_type == "open_drawer":
             return self.check_touch_condition(obs) and delta_openness_fraction < threshold
-        elif self.task == "close_drawer":
+        elif self.task_type == "close_drawer":
             return self.check_touch_condition(obs) and delta_openness_fraction > threshold
         else:
             raise NotImplementedError()
