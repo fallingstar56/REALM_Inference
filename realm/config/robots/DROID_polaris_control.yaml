@@ -18,8 +18,8 @@ robots:
             use_impedances: True
             use_gravity_compensation: False
             use_cc_compensation: False
-            command_output_limits: "default"
-            command_input_limits: "default"
+            command_output_limits: null
+            command_input_limits: null
             kp: 400
             damping_ratio: 80
         gripper_0:

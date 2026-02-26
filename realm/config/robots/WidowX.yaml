@@ -1,13 +1,13 @@
 robots:
   - name: "WidowX"
-    type: "WidowX"
+    type: "VX300S"
     obs_modalities: ["proprio"]
     proprio_obs: ["joint_qpos"]
     control_freq: 5
     action_normalize: False
     action_type: "continuous"
     friction: [ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 ] # TODO
-    armature: [ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 ] ] # TODO
+    armature: [ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 ] # TODO
     controller_name: "JointController"
     controller_config:
         arm_0:

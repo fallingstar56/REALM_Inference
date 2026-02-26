@@ -7,7 +7,6 @@ import omnigibson as og
 import omnigibson.lazy as lazy
 
 from realm.environments.env_dynamic import RealmEnvironmentDynamic
-from realm.inference import extract_from_obs
 
 
 def set_flat_physics_params(env: RealmEnvironmentDynamic, flat_params: np.ndarray):
@@ -30,18 +29,17 @@ def replay_traj(env: RealmEnvironmentDynamic, trajectory_actions, trajectory_gt_
     obs, rew, terminated, truncated, info = env.warmup(obs)
 
     for _ in range(150):
-        action = trajectory_gt_qpos[0]
+        action = np.concatenate((trajectory_gt_qpos[0, :7], np.atleast_1d(np.zeros(1))))
         obs, curr_task_progression, terminated, truncated, info = env.step(action)
 
     for t in range(max_steps):
-        base_im, base_im_second, wrist_im, robot_state, gripper_state = extract_from_obs(obs)
+        robot_state = obs['DROID']['proprio'].cpu().numpy()
+        qpos.append(robot_state[:7])
 
         ee_pos, ee_rot = env.get_ee_pose()
         ee_pos_list.append(ee_pos)
 
-        qpos.append(np.concatenate((robot_state, np.atleast_1d(np.array(gripper_state)))))
-
-        action = trajectory_actions[t]
+        action = np.concatenate((trajectory_actions[t, :7], np.atleast_1d(np.zeros(1))))
 
         obs, curr_task_progression, terminated, truncated, info = env.step(action)
 
@@ -77,7 +75,8 @@ def cost_function(traj_path: str, max_eps: int = 5):
     return cost
 
 
-def plot_err(res_dict, ep_name, log_dir):
+def plot_err(res_dict, ep_name, log_dir, plot_title=None):
+    plot_title = ep_name if plot_title is None else plot_title
     qpos_err = res_dict["qpos_err"]
     ee_pos_err = res_dict["ee_pos_err"]
 
@@ -85,19 +84,23 @@ def plot_err(res_dict, ep_name, log_dir):
 
     # Plot joint errors
     axes[0].plot(qpos_err)
-    axes[0].set_title(f"Joint Errors for {ep_name}")
+    axes[0].set_title(f"Joint Position Error: {plot_title}")
     axes[0].set_ylabel("Error (rad)")
     axes[0].set_xlabel("Time steps")
     axes[0].legend([f"Joint {i}" for i in range(7)], loc='upper right')
     axes[0].grid(True)
+    if np.sum(np.abs(qpos_err) > 0.06) <= 5:
+        axes[0].set_ylim(-0.06, 0.06)
 
     # Plot EE xyz errors
     axes[1].plot(ee_pos_err)
-    axes[1].set_title(f"End-Effector XYZ Errors for {ep_name}")
+    axes[1].set_title(f"EE XYZ Errors: {plot_title}")
     axes[1].set_ylabel("Error (m)")
     axes[1].set_xlabel("Time steps")
     axes[1].legend(['X', 'Y', 'Z'], loc='upper right')
     axes[1].grid(True)
+    if np.sum(np.abs(ee_pos_err) > 0.03) <= 5:
+        axes[1].set_ylim(-0.03, 0.03)
 
     plt.tight_layout()
 

@@ -222,7 +222,7 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
                 "scene_model": self.scene_model
             }
 
-        spawn_cfg = yaml.load(open(f"{self.config_path}/scenes/behavior1k_scenes.yaml", "r"), Loader=yaml.FullLoader)
+        spawn_cfg = yaml.load(open(f"{self.config_path}/scenes/scenes.yaml", "r"), Loader=yaml.FullLoader)
         assert self.scene_model in spawn_cfg and self.scene_part in spawn_cfg[self.scene_model]
         scene_data = spawn_cfg[self.scene_model][self.scene_part]
         if all(k in scene_data for k in ["x_min", "x_max", "y_min", "y_max", "z"]):
@@ -248,9 +248,7 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
             reset_joint_pos[:7] = DEFAULT_RESET_JOINTPOS
 
 
-        #cfg_robot = yaml.load(open(f"{self.config_path}/robots/{self.robot_name}}.yaml", "r"), Loader=yaml.FullLoader)
-        cfg_robot = yaml.load(open(f"{self.config_path}/robots/DROID_default_pd_control.yaml", "r"), Loader=yaml.FullLoader) # TODO: revert this to the above
-
+        cfg_robot = yaml.load(open(f"{self.config_path}/robots/{self.robot_name}.yaml", "r"), Loader=yaml.FullLoader)
         cfg_robot["robots"][0]["position"] = robot_pos
         cfg_robot["robots"][0]["orientation"] = omnigibson_transform_utils.euler2quat(
             torch.tensor(robot_rot, dtype=torch.float32)).tolist()
@@ -878,16 +876,22 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         if obs is None:
             obs, _ = self.reset()
 
-        #for t in range(30):
-        for t in range(300):
-            #self.reset_qpos[:7],
+        for t in range(30):
             new_action = np.concatenate((
-                np.zeros(7),
+                self.reset_qpos[:7],
                 np.atleast_1d(np.zeros(1))
             ))
             new_action[-1] = 1 if t < 15 else -1
 
             obs, rew, terminated, truncated, info = self.step(new_action)
+        # for t in range(300):
+        #     new_action = np.concatenate((
+        #         np.zeros(7),
+        #         np.atleast_1d(np.zeros(1))
+        #     ))
+        #     new_action[-1] = 1 if t < 15 else -1
+        #
+        #     obs, rew, terminated, truncated, info = self.step(new_action)
 
         self.mo_pos_orig, self.mo_rot_orig = self.main_objects[0].get_position_orientation()
         og.log.info("Warmup finished.")

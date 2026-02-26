@@ -18,10 +18,8 @@ robots:
             use_impedances: True
             use_gravity_compensation: False
             use_cc_compensation: False
-            command_output_limits: "default"
-            command_input_limits: "default"
-            #kp=None #og: 50; polaris: 400
-            #damping_ratio=None #og: 1; polaris: 80
+            command_output_limits: null
+            command_input_limits: null
         gripper_0:
           name: "CustomGripperController"
           mode: "binary"
