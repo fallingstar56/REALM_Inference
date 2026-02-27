@@ -104,7 +104,7 @@ To resume a run, you must provide the `--resume` flag AND the `--run-id` of the 
 
 Example using the cluster script:
 ```bash
-./scripts/karolina/run_evals_for_ckpt.sh \
+./scripts/karolina/run_eval_for_ckpt.sh \
     ... (other args) ... \
     --run-id 20240101_120000 \
     --resume

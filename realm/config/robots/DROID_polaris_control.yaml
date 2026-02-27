@@ -20,8 +20,8 @@ robots:
             use_cc_compensation: False
             command_output_limits: null
             command_input_limits: null
-            kp: 400
-            damping_ratio: 80
+            kp: 80
+            damping_ratio: 4
         gripper_0:
           name: "CustomGripperController"
           mode: "binary"

@@ -19,12 +19,12 @@ From: stanfordvl/omnigibson:1.1.1
             "imageio-ffmpeg==0.4.9" \
             "triton==2.2.0" \
             "usd-core==23.11"
-        micromamba install -n omnigibson -y -c conda-forge dm-control
-        micromamba run -n omnigibson pip install --no-cache-dir \
+        micromamba install -n omnigibson -y -c conda-forge dm-control --retry 5
+        micromamba run -n omnigibson pip install --no-cache-dir --default-timeout=100 \
             dm-robotics-controllers \
             dm-robotics-transformations \
             dm-robotics-geometry
-        micromamba run -n omnigibson pip install --no-cache-dir \
+        micromamba run -n omnigibson pip install --no-cache-dir --default-timeout=100 \
             dm-robotics-moma \
             dm-robotics-manipulation
         micromamba run -n omnigibson pip install --no-cache-dir \

@@ -7,7 +7,7 @@ import omnigibson as og
 def extract_from_obs(obs: dict, robot_name='DROID'):
     base_im = obs['external']['external_sensor0']['rgb'].cpu().numpy()[..., :3]
     if 'external_sensor1' in obs['external']:
-        base_im_second = obs['external']['external_senFsor1']['rgb'].cpu().numpy()[..., :3]
+        base_im_second = obs['external']['external_sensor1']['rgb'].cpu().numpy()[..., :3]
     else:
         base_im_second = None
 
