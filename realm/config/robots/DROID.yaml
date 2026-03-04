@@ -24,6 +24,8 @@ robots:
             Kxd: [ 37, 37, 37, 2, 2, 2 ]
             command_output_limits: null
             command_input_limits: null
+            max_effort: [ 87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0 ]
+            min_effort: [ -87.0, -87.0, -87.0, -87.0, -12.0, -12.0, -12.0 ]
         gripper_0:
           name: "CustomGripperController"
           mode: "binary"

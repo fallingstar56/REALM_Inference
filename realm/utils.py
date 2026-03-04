@@ -19,7 +19,7 @@ def set_flat_physics_params(env: RealmEnvironmentDynamic, flat_params: np.ndarra
         joint_prim.GetAttribute("physxJoint:armature").Set(flat_params[idx + 7])
 
 
-def replay_traj(env: RealmEnvironmentDynamic, trajectory_actions, trajectory_gt_qpos, trajectory_gt_ee, max_steps=1000):
+def replay_traj(env: RealmEnvironmentDynamic, trajectory_actions, trajectory_gt_qpos, trajectory_gt_ee=None, max_steps=1000, dof=7):
     max_steps = min(len(trajectory_actions), max_steps)
 
     qpos = []
@@ -34,23 +34,26 @@ def replay_traj(env: RealmEnvironmentDynamic, trajectory_actions, trajectory_gt_
 
     for t in range(max_steps):
         robot_state = obs[env.robot.name]['proprio'].cpu().numpy()
-        qpos.append(robot_state[:7])
+        qpos.append(robot_state[:dof])
 
         ee_pos, ee_rot = env.get_ee_pose()
         ee_pos_list.append(ee_pos)
 
-        action = np.concatenate((trajectory_actions[t, :7], np.atleast_1d(np.zeros(1))))
+        action = np.concatenate((trajectory_actions[t, :dof], np.atleast_1d(np.zeros(1))))
 
         obs, curr_task_progression, terminated, truncated, info = env.step(action)
 
     # Stack final achieve trajectories:
     qpos_arr = np.stack(qpos)  # (N, 8)
-    qpos_joints = qpos_arr[:, :7]
+    qpos_joints = qpos_arr[:, :dof]
     ee_pos_arr = np.stack(ee_pos_list)
 
 
-    qpos_err= qpos_joints[:, :7] - trajectory_gt_qpos[:, :7]
-    ee_pos_err = ee_pos_arr[:, :] - trajectory_gt_ee[:, :3]
+    qpos_err= qpos_joints[:, :dof] - trajectory_gt_qpos[:, :dof]
+    if trajectory_gt_ee is None:
+        ee_pos_err = -1
+    else:
+        ee_pos_err = ee_pos_arr[:, :] - trajectory_gt_ee[:, :3]
 
     return {
         "qpos_err": qpos_err,

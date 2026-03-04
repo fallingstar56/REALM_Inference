@@ -3,8 +3,9 @@ import torch
 
 from realm.environments.utils import *
 from realm.helpers import compute_rot_diff_magnitude
-from realm.robots.droid_joint_controller import IndividualJointPDController
-from realm.robots.droid_gripper_controller import MultiFingerGripperController
+from realm.robots.droid_joint_controller import IndividualJointPDController as DROIDJointPDController
+from realm.robots.droid_gripper_controller import MultiFingerGripperController as DROIDGripperController
+from realm.robots.custom_joint_controller import IndividualJointPDController
 import omnigibson as og
 from omnigibson.object_states.contact_bodies import ContactBodies
 from omnigibson.controllers import REGISTERED_CONTROLLERS
@@ -15,8 +16,9 @@ from omnigibson.prims.rigid_prim import RigidPrim
 from omnigibson.objects.dataset_object import DatasetObject
 
 
-REGISTERED_CONTROLLERS["CustomJointController"] = IndividualJointPDController
-REGISTERED_CONTROLLERS["CustomGripperController"] = MultiFingerGripperController
+REGISTERED_CONTROLLERS["IndividualJointPDController"] = IndividualJointPDController
+REGISTERED_CONTROLLERS["CustomJointController"] = DROIDJointPDController
+REGISTERED_CONTROLLERS["CustomGripperController"] = DROIDGripperController
 INIT_OPENNESS_FRACTION = 1.0 #0.5
 TASK_PROGRESS_RUBRICS = load_task_progressions()
 
