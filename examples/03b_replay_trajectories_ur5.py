@@ -36,6 +36,7 @@ if __name__ == "__main__":
     traj_root = "/app/data/RoboMIND2.0-UR5/data/ur/"
     rendering_mode = "r"
     robot = "UR5"
+    #robot = "UR5_default_pd_control"
 
     ep_paths = sorted(glob.glob(os.path.join(traj_root, "**/trajectory.hdf5"), recursive=True))
     random.seed(42)

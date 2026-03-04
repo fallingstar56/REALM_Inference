@@ -4,7 +4,7 @@ robots:
     obs_modalities: ["proprio"]
     proprio_obs: ["joint_qpos"]
     dof: 10
-    control_freq: 20 # TODO: confirm, this is from HACTS paper / RoboMind 2.0
+    control_freq: 30 # TODO: confirm, this is from HACTS paper / RoboMind 2.0
     action_normalize: False
     action_type: "continuous"
     friction: [ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 ] # TODO
@@ -14,7 +14,7 @@ robots:
         arm_0:
             name: "IndividualJointPDController"
             motor_type: "position"
-            control_freq: 20
+            control_freq: 30
             use_delta_commands: False
             use_impedances: True
             use_gravity_compensation: False

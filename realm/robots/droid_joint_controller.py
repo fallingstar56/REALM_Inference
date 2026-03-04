@@ -45,8 +45,8 @@ class IndividualJointPDController(LocomotionController, ManipulationController, 
         self._motor_type = motor_type.lower()
         self._use_impedances = True
 
-        self.max_effort = th.tensor(max_effort).to(og.sim.device)
-        self.min_effort = th.tensor(min_effort).to(og.sim.device)
+        self.max_effort = None if max_effort is None else th.tensor(max_effort).to(og.sim.device)
+        self.min_effort = None if min_effort is None else th.tensor(min_effort).to(og.sim.device)
 
         self._use_gravity_compensation = use_gravity_compensation
         self._use_cc_compensation = use_cc_compensation

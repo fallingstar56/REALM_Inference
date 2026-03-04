@@ -53,9 +53,9 @@ def set_sim_config(rendering_mode=None, robot="DROID"):
     if robot == "WidowX": # TODO: just read this from the yamls...
         gm.DEFAULT_SIM_STEP_FREQ = 5
         gm.DEFAULT_RENDERING_FREQ = 5
-    elif robot == "UR5":
-        gm.DEFAULT_SIM_STEP_FREQ = 20
-        gm.DEFAULT_RENDERING_FREQ = 20
+    elif "UR5" in robot:
+        gm.DEFAULT_SIM_STEP_FREQ = 30
+        gm.DEFAULT_RENDERING_FREQ = 30
     else:
         gm.DEFAULT_SIM_STEP_FREQ = 15
         gm.DEFAULT_RENDERING_FREQ = 15
