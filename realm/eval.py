@@ -50,14 +50,12 @@ SUPPORTED_PERTURBATIONS = [
 
 
 def set_sim_config(rendering_mode=None, robot="DROID"):
-    if robot == "DROID":
-        gm.DEFAULT_SIM_STEP_FREQ = 15
-        gm.DEFAULT_RENDERING_FREQ = 15
-    elif robot == "WidowX":
+    if robot == "WidowX":
         gm.DEFAULT_SIM_STEP_FREQ = 5
         gm.DEFAULT_RENDERING_FREQ = 5
     else:
-        raise NotImplementedError(f"Unknown robot embodiment: {robot}")
+        gm.DEFAULT_SIM_STEP_FREQ = 15
+        gm.DEFAULT_RENDERING_FREQ = 15
 
     gm.DEFAULT_PHYSICS_FREQ = 120
     gm.ENABLE_TRANSITION_RULES = False # this needs to be off to avoid bug with sludge state during collision: https://github.com/StanfordVL/BEHAVIOR-1K/issues/1201

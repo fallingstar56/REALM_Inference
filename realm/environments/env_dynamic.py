@@ -7,6 +7,8 @@ import copy
 import os
 
 from realm.environments.env_base import RealmEnvironmentBase, TASK_PROGRESS_RUBRICS
+from realm.robots.widowx import WidowX
+from realm.robots.ur import UR
 from realm.helpers import (
     calculate_new_camera_pose_mixed_rotations,
     add_rotation_noise,
@@ -248,12 +250,15 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         cfg_robot["robots"][0]["fixed_base"] = True
 
         reset_joint_pos = np.zeros(cfg_robot["robots"][0]["dof"] if "dof" in cfg_robot["robots"][0] else DROID_DEFAULT_DOF)
-        if "reset_joint_pos" in task_cfg:
-            reset_joint_pos[:7] = np.array(task_cfg['reset_joint_pos'])
-        elif "reset_joint_pos" in scene_data:
-            reset_joint_pos[:7] = np.array(scene_data['reset_joint_pos'])
-        else:
-            reset_joint_pos[:7] = DEFAULT_RESET_JOINTPOS
+        if "DROID" in self.robot_name:
+            if "reset_joint_pos" in task_cfg:
+                reset_joint_pos[:7] = np.array(task_cfg['reset_joint_pos'])
+            elif "reset_joint_pos" in scene_data:
+                reset_joint_pos[:7] = np.array(scene_data['reset_joint_pos'])
+            else:
+                reset_joint_pos[:7] = DEFAULT_RESET_JOINTPOS
+        elif self.robot_name == "WidowX":
+            reset_joint_pos[:6] = np.zeros(6) #np.array([0.0, -0.849879, 0.258767, 0.0, 1.2831712, 0.0])
         cfg_robot["robots"][0]["reset_joint_pos"] = reset_joint_pos
 
         if self.common_freq is not None:

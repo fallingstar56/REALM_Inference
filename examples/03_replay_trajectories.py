@@ -22,8 +22,10 @@ if __name__ == "__main__":
     task_cfg_path = f"IMPACT/trajectory_replay/default.yaml"
     traj_path = "/app/data/droid_1.0.1/extracted_eps/chunk-000/"
     rendering_mode = "r"
-    robot = "WidowX"
+    #robot = "UR5e"
+    #robot = "WidowX"
     #robot = "DROID"
+    robot = "DROID_polaris_control" # TODO: revert
 
     ep_names = [d for d in os.listdir(traj_path) if os.path.isdir(os.path.join(traj_path, d))]
     ep_names = ep_names[:args.max_eps]
@@ -35,7 +37,7 @@ if __name__ == "__main__":
         perturbations=["Default"],
         rendering_mode=rendering_mode,
         robot=robot,
-        #no_rendering=True
+        #no_rendering=True # TODO: revert
     )
 
     for traj_id in range(len(ep_names)):

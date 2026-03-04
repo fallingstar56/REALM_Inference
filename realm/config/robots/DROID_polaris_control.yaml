@@ -18,10 +18,12 @@ robots:
             use_impedances: True
             use_gravity_compensation: False
             use_cc_compensation: False
+            control_limits:
+              position: [[ -87.0, -87.0, -87.0, -87.0, -12.0, -12.0, -12.0 ], [ 87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0 ]]
             command_output_limits: null
             command_input_limits: null
-            kp: 80
-            damping_ratio: 4
+            kp: 400 #80
+            damping_ratio: 80 #4
         gripper_0:
           name: "CustomGripperController"
           mode: "binary"

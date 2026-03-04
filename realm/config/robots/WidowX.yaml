@@ -16,13 +16,15 @@ robots:
             motor_type: "position"
             control_freq: 5
             use_delta_commands: False
-            use_impedances: True #False
+            use_impedances: True
             use_gravity_compensation: False
             use_cc_compensation: False
             command_output_limits: null
             command_input_limits: null
-            kp: 5 # 800
-            damping_ratio: 10 #0
+#            kp: 5
+#            damping_ratio: 1
+#            kp: 0.03 #= 800 / 128 * 0.00269 * 1.793
+#            damping_ratio: 0.003 #= 10 / 16 * 0.00269 * 1.793
         gripper_0:
           name: "MultiFingerGripperController"
           mode: "binary"

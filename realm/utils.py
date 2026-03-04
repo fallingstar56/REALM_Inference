@@ -19,8 +19,8 @@ def set_flat_physics_params(env: RealmEnvironmentDynamic, flat_params: np.ndarra
         joint_prim.GetAttribute("physxJoint:armature").Set(flat_params[idx + 7])
 
 
-def replay_traj(env: RealmEnvironmentDynamic, trajectory_actions, trajectory_gt_qpos, trajectory_gt_ee):
-    max_steps = min(len(trajectory_actions), 1000)
+def replay_traj(env: RealmEnvironmentDynamic, trajectory_actions, trajectory_gt_qpos, trajectory_gt_ee, max_steps=1000):
+    max_steps = min(len(trajectory_actions), max_steps)
 
     qpos = []
     ee_pos_list = []
@@ -28,9 +28,9 @@ def replay_traj(env: RealmEnvironmentDynamic, trajectory_actions, trajectory_gt_
     obs, _ = env.reset()
     obs, rew, terminated, truncated, info = env.warmup(obs)
 
-    # for _ in range(150):
-    #     action = np.concatenate((trajectory_gt_qpos[0, :7], np.atleast_1d(np.zeros(1))))
-    #     obs, curr_task_progression, terminated, truncated, info = env.step(action)
+    for _ in range(150):
+        action = np.concatenate((trajectory_gt_qpos[0, :7], np.atleast_1d(np.zeros(1))))
+        obs, curr_task_progression, terminated, truncated, info = env.step(action)
 
     for t in range(max_steps):
         robot_state = obs[env.robot.name]['proprio'].cpu().numpy()
@@ -39,9 +39,7 @@ def replay_traj(env: RealmEnvironmentDynamic, trajectory_actions, trajectory_gt_
         ee_pos, ee_rot = env.get_ee_pose()
         ee_pos_list.append(ee_pos)
 
-        #action = np.concatenate((trajectory_actions[t, :7], np.atleast_1d(np.zeros(1))))
-        action = np.array([0.0, -0.849879, 0.258767, 0.0, 1.2831712, 0.0, 0.057, 0.057])
-        #action = np.zeros(8) # TODO: revert
+        action = np.concatenate((trajectory_actions[t, :7], np.atleast_1d(np.zeros(1))))
 
         obs, curr_task_progression, terminated, truncated, info = env.step(action)
 
