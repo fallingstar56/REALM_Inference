@@ -28,6 +28,7 @@ from omnigibson.utils.asset_utils import get_all_object_category_models
 from omnigibson.utils.asset_utils import get_all_object_models
 from omnigibson.utils.usd_utils import create_joint
 from omnigibson.prims.joint_prim import JointPrim
+from scipy.spatial.transform import Rotation as R
 
 
 
@@ -242,8 +243,11 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         assert "pos" in scene_data and "rot" in scene_data
         robot_pos = scene_data['pos']
         robot_rot = [math.radians(angle_deg) for angle_deg in scene_data['rot']]
+        self.robot_pos = np.array(robot_pos, dtype=float)
+        self.robot_rot_rad = np.array(robot_rot, dtype=float)
 
         cfg_robot = yaml.load(open(f"{self.config_path}/robots/{self.robot_name}.yaml", "r"), Loader=yaml.FullLoader)
+        self.ee_control = cfg_robot["robots"][0].get("ee_control", False)
         cfg_robot["robots"][0]["position"] = robot_pos
         cfg_robot["robots"][0]["orientation"] = omnigibson_transform_utils.euler2quat(
             torch.tensor(robot_rot, dtype=torch.float32)).tolist()
@@ -896,12 +900,34 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         if obs is None:
             obs, _ = self.reset()
 
+        if self.ee_control:
+            ee_pos, ee_rot  = self.get_ee_pose()
+            droid_base_height = DROID_BASE_HEIGHT if self.use_droid_with_base else 0.0
+
+            # Rotate and translate xyz
+            yaw = self.robot_rot_rad[2]
+            cos_y, sin_y = np.cos(yaw), np.sin(yaw)
+            dx, dy = ee_pos[0] - self.robot_pos[0], ee_pos[1] - self.robot_pos[1]
+            x_rel = cos_y * dx + sin_y * dy
+            y_rel = -sin_y * dx + cos_y * dy
+            z_rel = ee_pos[2] - self.robot_pos[2] - droid_base_height
+
+            # Compose predicted orientation with robot base yaw
+            R_base = R.from_euler('z', yaw)
+            R_pred = R.from_euler('xyz', action[3:6])
+            action[3:6] = (R_base * R_pred).as_euler('xyz')
+
+            R_base = R.from_euler('z', yaw)
+            euler_world = R.from_quat(ee_rot).as_euler('xyz')
+            euler_rel = (R_base.inv() * R.from_euler('xyz', euler_world)).as_euler('xyz')
+            ee_cmd = np.array([x_rel, y_rel, z_rel, euler_rel[0], euler_rel[1], euler_rel[2]])
+
         for t in range(30):
-            new_action = np.concatenate((
-                self.reset_qpos[:7],
-                np.atleast_1d(np.zeros(1))
-            ))
-            new_action[-1] = 1 if t < 15 else -1
+            gripper_val = np.atleast_1d(1.0 if t < 15 else -1.0)
+            if self.ee_control:
+                new_action = np.concatenate((ee_cmd, gripper_val))
+            else:
+                new_action = np.concatenate((self.reset_qpos[:7], gripper_val))
 
             obs, rew, terminated, truncated, info = self.step(new_action)
         # for t in range(300):
@@ -933,7 +959,37 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
             obs = apply_blur_and_contrast(obs, self.v_aug_sigma, self.v_aug_alpha)
         return obs, _
 
+    def _transform_ee_action(self, action):
+        """Transform EE action from robot-relative frame to world frame for the EE controller.
+
+        The model predicts [x, y, z, roll, pitch, yaw] in the robot base frame.
+        The EE controller (absolute_pose mode) expects world-frame position with z adjusted
+        by -0.87 (the controller adds this offset internally).
+        """
+        action = action.copy()
+        yaw = self.robot_rot_rad[2]
+
+        # Rotate and translate xy
+        cos_y, sin_y = np.cos(yaw), np.sin(yaw)
+        x_rel, y_rel = action[0], action[1]
+        action[0] = cos_y * x_rel - sin_y * y_rel + self.robot_pos[0]
+        action[1] = sin_y * x_rel + cos_y * y_rel + self.robot_pos[1]
+
+        # Z: model_z is in robot-base frame; add base world z and droid base height,
+        # then subtract the controller's internal 0.87 offset so IK receives correct world z.
+        droid_base_height = DROID_BASE_HEIGHT if self.use_droid_with_base else 0.0
+        action[2] = action[2] + self.robot_pos[2] + droid_base_height #- 0.87 # TODO: is this bs???
+
+        # Compose predicted orientation with robot base yaw
+        R_base = R.from_euler('z', yaw)
+        R_pred = R.from_euler('xyz', action[3:6])
+        action[3:6] = (R_base * R_pred).as_euler('xyz')
+
+        return action
+
     def step(self, action):
+        if self.ee_control:
+            action = self._transform_ee_action(action)
         obs, rew, terminated, truncated, info = self.omnigibson_env.step(action)
 
         task_progression = self.recompute_task_progression(obs)

@@ -1,6 +1,7 @@
 robots:
   - name: "DROID"
     type: "DROID"
+    ee_control: true
     obs_modalities: ["rgb", "proprio"]
     proprio_obs: ["joint_qpos"]
     control_freq: 15
