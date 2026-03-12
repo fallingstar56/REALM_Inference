@@ -54,7 +54,8 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
             mode="pose_delta_ori",
             workspace_pose_limiter=None,
             max_effort=None,
-            min_effort=None
+            min_effort=None,
+            height_offset=0.87
     ):
         self._motor_type = motor_type.lower()
         self._use_impedances = True
@@ -64,6 +65,8 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
 
         self._use_gravity_compensation = use_gravity_compensation
         self._use_cc_compensation = use_cc_compensation
+
+        self.height_offset = height_offset
 
         assert mode in IK_MODES, f"Invalid ik mode specified! Valid options are: {IK_MODES}, got: {mode}"
 
@@ -113,7 +116,7 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
         # Convert position command to absolute values if needed
         if self.mode == "absolute_pose":
             target_pos = command[:3]
-            target_pos[2] += 0.87 # height of robot base
+            target_pos[-1] += self.height_offset
         else:
             dpos = command[:3]
             target_pos = pos_relative + dpos
@@ -180,6 +183,7 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
 
         #--------------------------------------------------------------------------------
         pos_current = control_dict[f"{self.task_name}_pos_relative"]
+
         quat_current = control_dict[f"{self.task_name}_quat_relative"]
         rpy_current = th.from_numpy(R.from_quat(quat_current.numpy()).as_euler('xyz'))
 

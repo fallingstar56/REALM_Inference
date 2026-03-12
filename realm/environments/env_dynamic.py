@@ -50,6 +50,53 @@ MAX_CAMERA_PITCH_DEVIATION = 0.2
 MAX_CAMERA_YAW_DEVIATION = 0.2
 DROID_DEFAULT_DOF = 11
 
+# Panda joint origins from panda_robotiq_85.urdf: (xyz, rpy) per joint
+_PANDA_JOINT_ORIGINS = [
+    ([0,       0,      0.333], [0,        0, 0]),
+    ([0,       0,      0    ], [-np.pi/2, 0, 0]),
+    ([0,      -0.316,  0    ], [ np.pi/2, 0, 0]),
+    ([0.0825,  0,      0    ], [ np.pi/2, 0, 0]),
+    ([-0.0825, 0.384,  0    ], [-np.pi/2, 0, 0]),
+    ([0,       0,      0    ], [ np.pi/2, 0, 0]),
+    ([0.088,   0,      0    ], [ np.pi/2, 0, 0]),
+]
+_PANDA_EE_OFFSET = [0, 0, 0.107]  # panda_link8 fixed offset from panda_link7 (panda_arm.urdf)
+
+
+def _panda_fk(q):
+    """Forward kinematics for Panda arm using URDF parameters.
+    q: array of 7 joint angles (radians).
+    Returns (pos, quat_xyzw) of panda_link8 in the robot base (link0) frame.
+    Each joint transform: T = Translate(xyz) @ RPY(rpy) @ Rz(q_i)
+    """
+    def _rot3(a, axis):
+        ca, sa = np.cos(a), np.sin(a)
+        if axis == 'x':
+            return np.array([[1, 0, 0], [0, ca, -sa], [0, sa, ca]])
+        if axis == 'y':
+            return np.array([[ca, 0, sa], [0, 1, 0], [-sa, 0, ca]])
+        return np.array([[ca, -sa, 0], [sa, ca, 0], [0, 0, 1]])  # z
+
+    def _ht(xyz, rpy, qi):
+        # Fixed part: Translate(xyz) @ Rz(yaw) @ Ry(pitch) @ Rx(roll)
+        r_fixed = _rot3(rpy[2], 'z') @ _rot3(rpy[1], 'y') @ _rot3(rpy[0], 'x')
+        r_total = r_fixed @ _rot3(qi, 'z')
+        m = np.eye(4)
+        m[:3, :3] = r_total
+        m[:3, 3] = xyz
+        return m
+
+    m = np.eye(4)
+    for (xyz, rpy), qi in zip(_PANDA_JOINT_ORIGINS, q):
+        m = m @ _ht(xyz, rpy, qi)
+
+    m_ee = np.eye(4)
+    m_ee[:3, 3] = _PANDA_EE_OFFSET
+    m = m @ m_ee
+
+    from scipy.spatial.transform import Rotation as _R
+    return m[:3, 3].copy(), _R.from_matrix(m[:3, :3]).as_quat()
+
 
 def set_rendering_mode(rendering_mode):
     carb_settings = lazy.carb.settings.get_settings()
@@ -900,19 +947,36 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         if obs is None:
             obs, _ = self.reset()
 
+        if self.ee_control:
+            ee_pos, ee_quat = self.get_ee_pose()
+            ee_pos = ee_pos.cpu().numpy() if hasattr(ee_pos, 'cpu') else np.array(ee_pos)
+            ee_euler = R.from_quat(ee_quat.cpu().numpy()).as_euler('xyz')
+            ee_cmd = self._world2robot(np.concatenate([ee_pos, ee_euler]))
+
         for t in range(30):
             gripper_val = np.atleast_1d(1.0 if t < 15 else -1.0)
             if self.ee_control:
-                ee_pos, ee_rot = self.get_ee_pose()
-                droid_base_height = DROID_BASE_HEIGHT if self.use_droid_with_base else 0.0
-                ee_rot = R.from_quat(ee_rot.cpu().numpy()).as_euler('xyz')
-                ee_cmd = np.concatenate([ee_pos, ee_rot])
-                ee_cmd[2] -= droid_base_height
                 new_action = np.concatenate((ee_cmd, gripper_val))
             else:
                 new_action = np.concatenate((self.reset_qpos[:7], gripper_val))
 
             obs, rew, terminated, truncated, info = self.step(new_action)
+
+            # Sanity check: FK on current joint angles should match the robot-relative EE pose.
+            q_current = obs[self.robot.name]['proprio'].cpu().numpy()[:7]
+            fk_pos, fk_quat = _panda_fk(q_current)
+            pos_err = np.linalg.norm(fk_pos - ee_cmd[:3])
+            rot_err_rad = np.linalg.norm(
+                (R.from_quat(fk_quat) * R.from_euler('xyz', ee_cmd[3:6]).inv()).as_rotvec()
+            )
+            assert pos_err < 0.10, (
+                f"Warmup EE cmd position inconsistent with URDF FK: {pos_err:.4f}m error. "
+                f"sim={ee_cmd[:3]}, fk={fk_pos}"
+            )
+            assert np.degrees(rot_err_rad) < 20.0, (
+                f"Warmup EE cmd orientation inconsistent with URDF FK: {np.degrees(rot_err_rad):.1f}deg error. "
+                f"sim_euler={ee_cmd[3:6]}, fk_quat={fk_quat}"
+            )
         # for t in range(300):
         #     new_action = np.concatenate((
         #         np.zeros(7),
@@ -942,37 +1006,48 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
             obs = apply_blur_and_contrast(obs, self.v_aug_sigma, self.v_aug_alpha)
         return obs, _
 
-    def _transform_ee_action(self, action):
-        """Transform EE action from robot-relative frame to world frame for the EE controller.
-
-        The model predicts [x, y, z, roll, pitch, yaw] in the robot base frame.
-        The EE controller (absolute_pose mode) expects world-frame position with z adjusted
-        by -0.87 (the controller adds this offset internally).
-        """
+    def _robot2world(self, action):
         action = action.copy()
         yaw = self.robot_rot_rad[2]
 
-        # Rotate and translate xy
         cos_y, sin_y = np.cos(yaw), np.sin(yaw)
         x_rel, y_rel = action[0], action[1]
         action[0] = cos_y * x_rel - sin_y * y_rel + self.robot_pos[0]
         action[1] = sin_y * x_rel + cos_y * y_rel + self.robot_pos[1]
 
-        # Z: model_z is in robot-base frame; add base world z and droid base height,
-        # then subtract the controller's internal 0.87 offset so IK receives correct world z.
         droid_base_height = DROID_BASE_HEIGHT if self.use_droid_with_base else 0.0
-        action[2] = action[2] + self.robot_pos[2] + droid_base_height #- 0.87 # TODO: is this bs???
+        action[2] = action[2] + self.robot_pos[2] + droid_base_height
 
-        # Compose predicted orientation with robot base yaw
         R_base = R.from_euler('z', yaw)
         R_pred = R.from_euler('xyz', action[3:6])
         action[3:6] = (R_base * R_pred).as_euler('xyz')
 
         return action
 
+    def _world2robot(self, action):
+        """Convert a world-frame EE pose to robot-relative frame (inverse of _robot2world).
+        Input z is expected in raw world-frame (not yet adjusted for the controller's 0.87 offset).
+        """
+        action = action.copy()
+        yaw = self.robot_rot_rad[2]
+
+        dx = action[0] - self.robot_pos[0]
+        dy = action[1] - self.robot_pos[1]
+
+        cos_y, sin_y = np.cos(yaw), np.sin(yaw)
+        action[0] = cos_y * dx + sin_y * dy
+        action[1] = -sin_y * dx + cos_y * dy
+
+        droid_base_height = DROID_BASE_HEIGHT if self.use_droid_with_base else 0.0
+        action[2] = action[2] - self.robot_pos[2] - droid_base_height
+
+        R_base_inv = R.from_euler('z', yaw).inv()
+        R_world = R.from_euler('xyz', action[3:6])
+        action[3:6] = (R_base_inv * R_world).as_euler('xyz')
+
+        return action
+
     def step(self, action):
-        if self.ee_control:
-            action = self._transform_ee_action(action)
         obs, rew, terminated, truncated, info = self.omnigibson_env.step(action)
 
         task_progression = self.recompute_task_progression(obs)
