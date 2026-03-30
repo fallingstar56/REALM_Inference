@@ -18,6 +18,13 @@ RUN micromamba install -n omnigibson -y -c conda-forge wandb moviepy && \
     cp /opt/modified_entity_prim.py /omnigibson-src/omnigibson/prims/entity_prim.py && \
     rm /opt/modified_entity_prim.py
 
+RUN micromamba run -n omnigibson pip install --default-timeout=1000 --retries 10 \
+    "lxml==4.9.4" \
+    "imageio==2.33.1" \
+    "imageio-ffmpeg==0.4.9" \
+    "triton==2.2.0" \
+    "usd-core==23.11"
+
 # 1. Install dm-control via conda-forge first
 RUN micromamba install -n omnigibson -y -c conda-forge dm-control
 
