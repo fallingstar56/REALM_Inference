@@ -261,6 +261,13 @@ if [ "$DOWNLOAD_DATASET" = true ]; then
             micromamba run -n omnigibson python -m omnigibson.download_datasets
     fi
 
+    # ensure Isaac Sim directories exist (may be missing after download)
+    mkdir -p "$DATA_PATH/isaac-sim/cache"
+    mkdir -p "$DATA_PATH/isaac-sim/config"
+    mkdir -p "$DATA_PATH/isaac-sim/documents"
+    mkdir -p "$DATA_PATH/isaac-sim/logs"
+    mkdir -p "$DATA_PATH/isaac-sim/data"
+
     add_to_bashrc "REALM_DATA_PATH" "$DATA_PATH"
     echo "Finished downloading datasets."
 fi
