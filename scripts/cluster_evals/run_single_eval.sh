@@ -17,6 +17,7 @@ MULTI_VIEW_FLAG=""
 RESUME_FLAG=""
 TASK_CFG_PATH=""
 NO_RENDER_FLAG=""
+SAVE_MP4_FLAG=""
 ROBOT_FLAG=""
 BASE_PORT=8000
 GR00T_SERVER_ENTRYPOINT="gr00t/eval/run_gr00t_server.py"
@@ -79,6 +80,7 @@ while [[ "$#" -gt 0 ]]; do
     --rendering_mode) RENDERING_MODE="$2"; shift 2 ;;
     --multi-view) MULTI_VIEW_FLAG="--multi-view"; shift 1;;
     --resume) RESUME_FLAG="--resume"; shift 1;;
+    --save_mp4) SAVE_MP4_FLAG="--save_mp4"; shift 1;;
     --no_render) NO_RENDER_FLAG="--no_render"; shift 1;;
     --robot) ROBOT_FLAG="--robot $2"; shift 2 ;;
     *) shift ;;
@@ -232,6 +234,7 @@ apptainer exec \
   --rendering_mode $RENDERING_MODE \
   $MULTI_VIEW_FLAG \
   $RESUME_FLAG \
+  $SAVE_MP4_FLAG \
   $NO_RENDER_FLAG \
   $ROBOT_FLAG
 

@@ -89,6 +89,7 @@ def evaluate(
         resume=False,
         multi_view=False,
         no_record=False,
+        save_mp4=False,
         no_render=False,
         rendering_mode=None,
         task_cfg_path=None,
@@ -96,6 +97,8 @@ def evaluate(
 ):
     start = time.perf_counter()
     og.log.info(f"DEBUG: Begin eval: {time.perf_counter() - start:.4f}s")
+    if save_mp4 and no_record:
+        raise ValueError("--save_mp4 requires video recording to remain enabled. Remove --no_record.")
     if rendering_mode is None:
         rendering_mode = "rt"
     set_sim_config(rendering_mode=rendering_mode, robot=robot)
@@ -353,6 +356,13 @@ def evaluate(
         result_entry["qpos"] = np.stack(qpos).tolist()
         result_entry["actions"] = np.stack(actions).tolist()
         if not no_record:
+            if save_mp4:
+                mp4_basename = os.path.join(
+                    log_dir,
+                    "videos",
+                    f"{task}_{perturbations[0]}_{run_id:03d}",
+                )
+                video_recorder.save_video(mp4_basename)
             video_bytes = video_recorder.get_video_bytes()
             result_entry["video"] = video_bytes
         

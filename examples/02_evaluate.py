@@ -29,6 +29,7 @@ if __name__ == "__main__":
     parser.add_argument('--multi-view', action='store_true', help='Enable second external camera')
     parser.add_argument('--resume', action='store_true', help='Resume from existing run report if found')
     parser.add_argument('--no_record', action='store_true', help='Do not record videos from runs.')
+    parser.add_argument('--save_mp4', action='store_true', help='Save rollout videos as standalone mp4 files under the log directory.')
     parser.add_argument('--no_render', action='store_true', help='Disable rendering completely')
     parser.add_argument('--robot', type=str, required=False, default="DROID", help='Robot type')
     args = parser.parse_args()
@@ -56,6 +57,7 @@ if __name__ == "__main__":
         multi_view=args.multi_view,
         resume=args.resume,
         no_record=args.no_record,
+        save_mp4=args.save_mp4,
         no_render=args.no_render,
         rendering_mode=args.rendering_mode,
         task_cfg_path=args.task_cfg_path,

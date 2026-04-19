@@ -11,6 +11,7 @@ REPEATS=25
 RUN_ID=$(date +%Y%m%d_%H%M%S)
 DEBUG=false
 MULTI_VIEW_FLAG=""
+SAVE_MP4_FLAG=""
 RESUME_FLAG=""
 RESUME=false
 ROBOT_FLAG=""
@@ -38,6 +39,7 @@ while [[ "$#" -gt 0 ]]; do
     --model_type) MODEL_TYPE="$2"; shift 2 ;;
     --debug) DEBUG=true; shift 1;; 
     --multi-view) MULTI_VIEW_FLAG="--multi-view"; shift 1;; 
+    --save_mp4) SAVE_MP4_FLAG="--save_mp4"; shift 1;;
     --no_render) NO_RENDER_FLAG="--no_render"; shift 1;;
     --run-id) RUN_ID="$2"; shift 2 ;; 
     --resume) RESUME=true; RESUME_FLAG="--resume"; shift 1;; 
@@ -157,6 +159,7 @@ for i in "${TASK_IDS[@]}"; do
       --rendering_mode "$RENDERING_MODE" \
       $DEBUG_FLAG \
       $MULTI_VIEW_FLAG \
+      $SAVE_MP4_FLAG \
       $RESUME_FLAG \
       $NO_RENDER_FLAG \
       $ROBOT_FLAG
