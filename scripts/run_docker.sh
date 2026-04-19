@@ -6,6 +6,8 @@ Color_Off='\033[0m'
 
 # Parse the command line arguments.
 GUI=true
+DOCKER_DISPLAY=""
+OMNIGIBSON_HEADLESS=1
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]
@@ -45,6 +47,19 @@ fi
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 REALM_ROOT=$( cd -- "$( dirname -- "${SCRIPT_DIR}" )" &> /dev/null && pwd )
 
+GR00T_DOCKER_ARGS=()
+if [[ -n "${GR00T_ROOT:-}" ]]; then
+    if [[ ! -d "$GR00T_ROOT" ]]; then
+        echo "GR00T_ROOT is set but does not exist: $GR00T_ROOT" >&2
+        exit 1
+    fi
+    GR00T_DOCKER_ARGS+=(
+        -e "GR00T_ROOT=/app/Isaac-GR00T"
+        -e "ISAAC_GR00T_ROOT=/app/Isaac-GR00T"
+        -v "$GR00T_ROOT:/app/Isaac-GR00T:rw"
+    )
+fi
+
 cd $REALM_ROOT
 mkdir -p $REALM_DATA_PATH/isaac-sim/cache/kit
 mkdir -p $REALM_DATA_PATH/isaac-sim/cache/ov
@@ -61,9 +76,11 @@ docker run \
     --privileged \
     -e DISPLAY=${DOCKER_DISPLAY} \
     -e OMNIGIBSON_HEADLESS=${OMNIGIBSON_HEADLESS} \
+    -e XDG_RUNTIME_DIR=/tmp/xdg-runtime \
     -e OMNI_KIT_ALLOW_ROOT=1 \
     -e TORCH_CUDA_ARCH_LIST="12.0" \
     -e CUDA_FORCE_PTX_JIT=1 \
+    --tmpfs /tmp/xdg-runtime:rw,exec,nosuid,nodev,mode=700 \
     -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
     -v $(pwd):/app:rw \
     -v $REALM_DATA_PATH/datasets:/data \
@@ -77,4 +94,5 @@ docker run \
     -v $REALM_DATA_PATH/isaac-sim/data:/root/.local/share/ov/data:rw \
     -v $REALM_DATA_PATH/isaac-sim/documents:/root/Documents:rw \
     -v /usr/share/nvidia/nvoptix.bin:/usr/share/nvidia/nvoptix.bin:ro \
+    "${GR00T_DOCKER_ARGS[@]}" \
     --network=host --rm -it realm
