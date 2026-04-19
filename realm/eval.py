@@ -183,6 +183,15 @@ def evaluate(
 
         while t < max_steps and terminal_steps > 0:
             base_im, base_depth, base_im_second, base_depth_second, wrist_im, robot_state, gripper_state = extract_from_obs(obs, robot_name=env.robot.name)
+            use_base_im_second = env.task_type == "open_close_drawer" if hasattr(env, "task_type") else False
+
+            if hasattr(client, "observe"):
+                client.observe(
+                    base_im,
+                    base_im_second,
+                    wrist_im,
+                    use_base_im_second=use_base_im_second,
+                )
 
             # Metrics collection
             ee_pos, ee_rot = env.get_ee_pose()
@@ -222,7 +231,7 @@ def evaluate(
 
                 pred_action_chunk = client.infer(
                     env.instruction, base_im, base_im_second, wrist_im, robot_state, gripper_state,
-                    use_base_im_second=(env.task_type == "open_close_drawer" if hasattr(env, "task_type") else False),
+                    use_base_im_second=use_base_im_second,
                     ee_control=env.ee_control,
                     cartesian_position=cartesian_position
                 )

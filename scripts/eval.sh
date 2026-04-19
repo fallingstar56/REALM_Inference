@@ -504,6 +504,11 @@ trap cleanup EXIT
 #   ideally inside setup.sh invoking setup_pi.sh and setup_gr00t.sh
 # TODO: replace this if statement by running external model script.
 #   Implemented models should have own sh script.
+GR00T_SERVER_ENTRYPOINT="gr00t/eval/run_gr00t_server.py"
+GR00T_EMBODIMENT_TAG="OXE_DROID_RELATIVE_EEF_RELATIVE_JOINT"
+GR00T_SERVER_HOST="0.0.0.0"
+GR00T_SERVER_DEVICE="cuda:0"
+
 PORT=$(choose_model_port)
 echo "Using port $PORT for model server"
 SERVER_PGID=""
@@ -584,15 +589,21 @@ elif [ "$MODEL" == "pi0_FAST" ]; then
 elif [ "$MODEL" == "GR00T" ]; then
     if [[ -z "${GR00T_ROOT:-}" ]]; then
         echo "GR00T_ROOT is not set."
-        echo "Set it to the GR00T root to use, e.g.:"
-        echo "  export GR00T_ROOT=\"/path/to/the/GR00T\""
+        echo "Set it to the Isaac-GR00T root to use, e.g.:"
+        echo "  export GR00T_ROOT=\"/path/to/Isaac-GR00T\""
+        exit 1
+    fi
+    if [[ ! -f "$GR00T_ROOT/$GR00T_SERVER_ENTRYPOINT" ]]; then
+        echo "GR00T_ROOT does not contain $GR00T_SERVER_ENTRYPOINT: $GR00T_ROOT"
         exit 1
     fi
     cd "$GR00T_ROOT"
-    setsid uv run scripts/serve_gr00t.py \
-        --port=$PORT \
-        --model_path "$CKPT_PATH"  \
-        --data-config droid_joint_pos & SERVER_PID=$!
+    setsid uv run python "$GR00T_SERVER_ENTRYPOINT" \
+        --model-path "$CKPT_PATH" \
+        --embodiment-tag "$GR00T_EMBODIMENT_TAG" \
+        --host "$GR00T_SERVER_HOST" \
+        --port "$PORT" \
+        --device "$GR00T_SERVER_DEVICE" & SERVER_PID=$!
 
     # capture process group of the server
     SERVER_PGID="$SERVER_PID"

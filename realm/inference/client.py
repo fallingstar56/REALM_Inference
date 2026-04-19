@@ -27,6 +27,19 @@ class InferenceClient:
                 host=host,
                 port=port
             )
+        elif model_type == "GR00T":
+            from realm.inference.gr00t import Gr00tClient
+
+            og.log.info(f"Connecting to GR00T server at {host}:{port}...")
+            self.client = Gr00tClient(
+                host=host,
+                port=port,
+                timeout_ms=int(timeout * 1000),
+            )
+            modality_config = self.client.connect(fetch_modality_config=True)
+            og.log.info(
+                f"Connected to GR00T server. Modality config keys: {list(modality_config.keys())}"
+            )
         elif model_type == "debug":
             self.client = None
         else:
@@ -64,22 +77,34 @@ class InferenceClient:
             return pred_action_chunk
 
         elif self.model_type == "GR00T":
-            base_im_resized = np.asarray(Image.fromarray(base_im).resize((320, 180))).astype(np.uint8)
-            base_im_second_resized = np.asarray(Image.fromarray(base_im_second).resize((320, 180))).astype(np.uint8)
-            wrist_im_resized = np.asarray(Image.fromarray(wrist_im).resize((320, 180))).astype(np.uint8)
+            pred = self.client.infer(
+                {
+                    "instruction": instruction,
+                    "base_im": base_im,
+                    "base_im_second": base_im_second,
+                    "wrist_im": wrist_im,
+                    "robot_state": robot_state,
+                    "gripper_state": gripper_state,
+                    "cartesian_position": cartesian_position,
+                    "use_base_im_second": use_base_im_second,
+                    "update_frame_buffer": False,
+                }
+            )
+            joint_key = "joint_position" if "joint_position" in pred else "action.joint_position"
+            gripper_key = (
+                "gripper_position" if "gripper_position" in pred else "action.gripper_position"
+            )
+            joint_action = np.asarray(pred[joint_key], dtype=np.float32)
+            gripper_action = np.asarray(pred[gripper_key], dtype=np.float32)
 
-            obs_dict = {
-                "prompt": [instruction],
-                "state.joint_position": np.array(robot_state).astype(np.float32).reshape(1, 7),
-                "state.gripper_position": np.atleast_1d(np.array(gripper_state)).astype(np.float32).reshape(1, 1),
-                "video.exterior_image_1": base_im_resized[None],
-                "video.exterior_image_2": base_im_second_resized[None],
-                "video.wrist_image": wrist_im_resized[None]
-            }
-            pred = self.client.infer(obs_dict)
+            if joint_action.ndim == 3:
+                joint_action = joint_action[0]
+            if gripper_action.ndim == 3:
+                gripper_action = gripper_action[0]
+
             pred_action_chunk = np.concatenate(
-                [pred["action.joint_position"],
-                 pred["action.gripper_position"].reshape(-1, 1)], axis=-1)
+                [joint_action, gripper_action.reshape(joint_action.shape[0], -1)], axis=-1
+            )
             return pred_action_chunk
 
         elif self.model_type == "molmoact":
@@ -148,3 +173,18 @@ class InferenceClient:
     def reset(self):
         if hasattr(self.client, "reset"):
             self.client.reset()
+
+    def observe(
+        self,
+        base_im,
+        base_im_second,
+        wrist_im,
+        use_base_im_second=False,
+    ):
+        if self.model_type == "GR00T" and hasattr(self.client, "observe"):
+            self.client.observe(
+                base_im=base_im,
+                base_im_second=base_im_second,
+                wrist_im=wrist_im,
+                use_base_im_second=use_base_im_second,
+            )

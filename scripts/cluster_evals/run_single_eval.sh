@@ -19,6 +19,47 @@ TASK_CFG_PATH=""
 NO_RENDER_FLAG=""
 ROBOT_FLAG=""
 BASE_PORT=8000
+GR00T_SERVER_ENTRYPOINT="gr00t/eval/run_gr00t_server.py"
+GR00T_EMBODIMENT_TAG="OXE_DROID_RELATIVE_EEF_RELATIVE_JOINT"
+GR00T_SERVER_HOST="0.0.0.0"
+GR00T_SERVER_DEVICE="cuda:0"
+MODEL_SERVER_TIMEOUT="${MODEL_SERVER_TIMEOUT:-180}"
+
+PORT_CHECK_CMD=""
+if command -v nc >/dev/null 2>&1; then
+  PORT_CHECK_CMD="nc"
+elif command -v ss >/dev/null 2>&1; then
+  PORT_CHECK_CMD="ss"
+else
+  echo "Need either 'nc' or 'ss' available to check the port."
+  exit 1
+fi
+
+wait_for_port() {
+  local port="$1"
+  local timeout="${2:-180}"
+  local interval=2
+  local elapsed=0
+
+  while (( elapsed < timeout )); do
+    case "$PORT_CHECK_CMD" in
+      nc)
+        if nc -z localhost "$port" 2>/dev/null; then
+          return 0
+        fi
+        ;;
+      ss)
+        if ss -ltn "sport = :$port" 2>/dev/null | grep -q "$port"; then
+          return 0
+        fi
+        ;;
+    esac
+    sleep "$interval"
+    elapsed=$(( elapsed + interval ))
+  done
+
+  return 1
+}
 
 while [[ "$#" -gt 0 ]]; do
   case $1 in
@@ -88,12 +129,30 @@ if [ "$DEBUG" = "false" ]; then
       $POLICY_SIF /bin/bash -c "source /opt/conda/etc/profile.d/conda.sh && conda activate && pip install tyro && pip install /app/packages/openpi-client && python /app/inference/run_molmoact_server.py --port=${port}"
     sleep 120
   elif [ "$MODEL_TYPE" == "GR00T" ]; then
+    if [[ -z "${POLICY_RUN_DIR:-}" ]]; then
+      echo "POLICY_RUN_DIR is not set for GR00T. Pass the Isaac-GR00T root with --policy_run_dir."
+      exit 1
+    fi
+    if [[ ! -f "$POLICY_RUN_DIR/$GR00T_SERVER_ENTRYPOINT" ]]; then
+      echo "POLICY_RUN_DIR does not contain $GR00T_SERVER_ENTRYPOINT: $POLICY_RUN_DIR"
+      exit 1
+    fi
     cd "$POLICY_RUN_DIR" || exit
-    uv run scripts/serve_gr00t.py \
-      --port=$port \
-      --model_path $CHECKPOINT_PATH \
-      --data-config droid_joint_pos & SERVER_PID=$!
-    sleep 120
+    uv run python "$GR00T_SERVER_ENTRYPOINT" \
+      --model-path "$CHECKPOINT_PATH" \
+      --embodiment-tag "$GR00T_EMBODIMENT_TAG" \
+      --host "$GR00T_SERVER_HOST" \
+      --port "$port" \
+      --device "$GR00T_SERVER_DEVICE" & SERVER_PID=$!
+
+    echo "Waiting for the GR00T model server to start (maximum: ${MODEL_SERVER_TIMEOUT}s)"
+    if wait_for_port "$port" "$MODEL_SERVER_TIMEOUT"; then
+      echo "GR00T server is listening on port ${port}"
+    else
+      echo "GR00T server did not start listening on ${port} within ${MODEL_SERVER_TIMEOUT}s"
+      kill "$SERVER_PID" 2>/dev/null || true
+      exit 1
+    fi
   fi
 fi
 
