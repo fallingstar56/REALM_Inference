@@ -13,7 +13,13 @@ if __name__ == "__main__":
     parser.add_argument('--horizon', type=int, required=False, default=8)
     parser.add_argument('--task_cfg_path', type=str, required=False, default=None)
     parser.add_argument('--model_name', type=str, required=True, default=None)
-    parser.add_argument('--model_type', type=str, required=True, default=None)
+    parser.add_argument(
+        '--model_type',
+        type=str,
+        required=True,
+        default=None,
+        help='Inference backend identifier. Recommended values include openpi, pi0_FAST, and gr00t_n17.',
+    )
     parser.add_argument('--port', type=int, required=True)
     parser.add_argument('--host', type=str, required=False, default="127.0.0.1", help='Inference server host')
     parser.add_argument('--experiment_name', type=str, required=True)

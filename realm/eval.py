@@ -164,6 +164,8 @@ def evaluate(
         actions = []
         action_buffer = Queue()
 
+        client.reset()
+
         # -------------------- Rollout loop --------------------
         obs, _ = env.reset()
         obs, rew, terminated, truncated, info = env.warmup(obs)
@@ -254,7 +256,7 @@ def evaluate(
             actions.append(action)
 
             new_action = action.copy()
-            if model_type in ["debug", "openpi", "GR00T", "GR00T_N16", "dreamzero"]: # TODO: use a model config
+            if model_type in ["debug", "openpi", "GR00T", "gr00t_n17", "GR00T_N16", "dreamzero"]: # TODO: use a model config
                 new_action[-1] = 1 if action[-1] > 0.5 else -1  # Prediction: (1,0) -> Target: (1,-1)
             elif model_type == "molmoact":
                 new_action[-1] = 1 if action[-1] < 0.5 else -1  # Prediction: (0,1) -> Target: (1,-1)
@@ -363,8 +365,6 @@ def evaluate(
 
         if not no_record:
             video_recorder.cleanup()
-
-        client.reset()
 
         results_filename = save_results(results, log_dir + "/reports", task, perturbations[0], filename=results_filename)
 

@@ -15,6 +15,7 @@ class InferenceClient:
         self.model_type = model_type
         self.host = host
         self.port = port
+        self.gr00t_n17_modality_config = None
         # if model_type == "GR00T_N16":
         #     self.client = ExternalRobotInferenceClient(host=self.host, port=self.port)
         # elif model_type == "hamster":
@@ -27,23 +28,37 @@ class InferenceClient:
                 host=host,
                 port=port
             )
+        elif model_type == "gr00t_n17":
+            self.client = self._init_gr00t_n17_client(host, port, timeout)
         elif model_type == "GR00T":
-            from realm.inference.gr00t import Gr00tClient
-
-            og.log.info(f"Connecting to GR00T server at {host}:{port}...")
-            self.client = Gr00tClient(
-                host=host,
-                port=port,
-                timeout_ms=int(timeout * 1000),
+            og.log.warning(
+                "Model type 'GR00T' is kept as a compatibility alias. "
+                "Use 'gr00t_n17' for explicit GR00T N1.7 rollout logic."
             )
-            modality_config = self.client.connect(fetch_modality_config=True)
-            og.log.info(
-                f"Connected to GR00T server. Modality config keys: {list(modality_config.keys())}"
-            )
+            self.client = self._init_gr00t_n17_client(host, port, timeout)
         elif model_type == "debug":
             self.client = None
         else:
             raise NotImplementedError()
+
+    def _init_gr00t_n17_client(self, host, port, timeout):
+        from realm.inference.gr00t_n17 import Gr00tN17Client
+
+        og.log.info(f"Connecting to GR00T N1.7 server at {host}:{port}...")
+        client = Gr00tN17Client(
+            host=host,
+            port=port,
+            timeout_ms=int(timeout * 1000),
+        )
+        self.gr00t_n17_modality_config = client.connect(fetch_modality_config=True)
+        og.log.info(
+            "Connected to GR00T N1.7 server. "
+            f"Modality config keys: {list(self.gr00t_n17_modality_config.keys())}"
+        )
+        return client
+
+    def _uses_gr00t_n17_adapter(self):
+        return self.model_type in {"gr00t_n17", "GR00T"}
 
     def infer(self, instruction, base_im, base_im_second, wrist_im, robot_state, gripper_state, use_base_im_second=False, ee_control=False, cartesian_position=None):
         if self.model_type == "debug":
@@ -76,8 +91,8 @@ class InferenceClient:
                  pred["action.gripper_position"].reshape(-1, 1)], axis=-1)
             return pred_action_chunk
 
-        elif self.model_type == "GR00T":
-            pred = self.client.infer(
+        elif self._uses_gr00t_n17_adapter():
+            pred_action_chunk = self.client.infer_action_chunk(
                 {
                     "instruction": instruction,
                     "base_im": base_im,
@@ -89,21 +104,6 @@ class InferenceClient:
                     "use_base_im_second": use_base_im_second,
                     "update_frame_buffer": False,
                 }
-            )
-            joint_key = "joint_position" if "joint_position" in pred else "action.joint_position"
-            gripper_key = (
-                "gripper_position" if "gripper_position" in pred else "action.gripper_position"
-            )
-            joint_action = np.asarray(pred[joint_key], dtype=np.float32)
-            gripper_action = np.asarray(pred[gripper_key], dtype=np.float32)
-
-            if joint_action.ndim == 3:
-                joint_action = joint_action[0]
-            if gripper_action.ndim == 3:
-                gripper_action = gripper_action[0]
-
-            pred_action_chunk = np.concatenate(
-                [joint_action, gripper_action.reshape(joint_action.shape[0], -1)], axis=-1
             )
             return pred_action_chunk
 
@@ -181,7 +181,7 @@ class InferenceClient:
         wrist_im,
         use_base_im_second=False,
     ):
-        if self.model_type == "GR00T" and hasattr(self.client, "observe"):
+        if self._uses_gr00t_n17_adapter() and hasattr(self.client, "observe"):
             self.client.observe(
                 base_im=base_im,
                 base_im_second=base_im_second,

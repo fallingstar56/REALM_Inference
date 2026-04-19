@@ -10,10 +10,12 @@ EVAL_SUCCESS=0
 # --------------------------------------------------------------------------------------
 print_help() {
     cat <<EOF
-Usage: $(basename "$0") -c PATH [OPTIONS]
+Usage: $(basename "$0") [OPTIONS]
 
-Required:
+Checkpoint selection:
     -c, --ckpt-path PATH       Host path to the model checkpoint
+                               Required for pi0 / pi0_FAST
+                               For GR00T N1.7, defaults to GR00T_MODEL_PATH if unset
 
 Rest of options:
   -p, --perturbation-id ID   Perturbation ID [0–15]. Default: 0
@@ -50,7 +52,7 @@ Rest of options:
   -s, --max-steps N          Max steps per episode before termination. Default: 500
 
   -m, --model MODEL          Either:
-                               - one of: pi0 | pi0_FAST | GR00T
+                                                             - one of: pi0 | pi0_FAST | gr00t_n17 | GR00T
                                - or path to an executable script that starts a model server
                              Default: pi0
 
@@ -59,14 +61,22 @@ Rest of options:
   
   --multi-view               Enable multi-view camera (adds a second external camera)
 
+Environment for GR00T N1.7:
+    GR00T_ROOT                 Isaac-GR00T repo root
+    GR00T_MODEL_PATH           Model path used when --ckpt-path is omitted
+    GR00T_EMBODIMENT_TAG       Embodiment tag passed to run_gr00t_server.py
+    GR00T_DEVICE               Device passed to run_gr00t_server.py (default: cuda:0)
+
 Other:
   -h, --help                 Show this help and exit
 
 Examples:
   # pi0 evaluation with default settings on 'put_green_block_in_bowl' task
   $0 -c /path/to/pi0/checkpoint
-  # Small run of GR00T evaluation on 'rotate_marker' task with 'V-SC' (distractors) visual perturbation through docker
-  $0 -p 3 -t 2 -r 1 -s 50 -m GR00T -c /path/to/gr00t/checkpoint -e docker
+    # Small run of GR00T N1.7 evaluation on 'rotate_marker' with 'V-SC' through docker
+    export GR00T_ROOT=/path/to/Isaac-GR00T
+    export GR00T_MODEL_PATH=/path/to/gr00t/checkpoint
+    $0 -p 3 -t 2 -r 1 -s 50 -m gr00t_n17 -e docker
   # Standard run of pi0_FAST evaluation on 'stark_cubes' task with 'S_MO' (spatial ref.) semantic perturbation through docker
   $0 -p 7 -t 6 -m pi0_FAST -c /path/to/pi0_FAST/checkpoint
   # Custom model run
@@ -208,11 +218,28 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+REALM_MODEL="$MODEL"
+case "$MODEL" in
+    GR00T)
+        REALM_MODEL="gr00t_n17"
+        echo "Warning: MODEL=GR00T is a compatibility alias. Prefer MODEL=gr00t_n17." >&2
+        ;;
+    gr00t_n17)
+        ;;
+esac
+
 # --------------------------------------------------------------------------------------
 # Required argument checks after parsing
 # --------------------------------------------------------------------------------------
+if [[ -z "$CKPT_PATH" && "$REALM_MODEL" == "gr00t_n17" && -n "${GR00T_MODEL_PATH:-}" ]]; then
+    CKPT_PATH="$GR00T_MODEL_PATH"
+fi
+
 if [[ -z "$CKPT_PATH" ]]; then
     echo "Error: --ckpt-path is required." >&2
+    if [[ "$REALM_MODEL" == "gr00t_n17" ]]; then
+        echo "Set --ckpt-path or export GR00T_MODEL_PATH for GR00T N1.7." >&2
+    fi
     echo
     print_help
     exit 1
@@ -245,10 +272,10 @@ case "$EVAL_ENV" in
 esac
 
 case "$MODEL" in
-    pi0|pi0_FAST|GR00T)
+    pi0|pi0_FAST|gr00t_n17|GR00T)
         ;;
     *)
-        echo "$MODEL is not in (pi0|pi0_FAST|GR00T). Assuming that it is an executable file."
+        echo "$MODEL is not in (pi0|pi0_FAST|gr00t_n17|GR00T). Assuming that it is an executable file."
         if [ ! -e "$MODEL" ]; then
             echo "Error: MODEL '$MODEL' does not exist."
             exit 1
@@ -505,9 +532,9 @@ trap cleanup EXIT
 # TODO: replace this if statement by running external model script.
 #   Implemented models should have own sh script.
 GR00T_SERVER_ENTRYPOINT="gr00t/eval/run_gr00t_server.py"
-GR00T_EMBODIMENT_TAG="OXE_DROID_RELATIVE_EEF_RELATIVE_JOINT"
+GR00T_EMBODIMENT_TAG="${GR00T_EMBODIMENT_TAG:-OXE_DROID_RELATIVE_EEF_RELATIVE_JOINT}"
 GR00T_SERVER_HOST="0.0.0.0"
-GR00T_SERVER_DEVICE="cuda:0"
+GR00T_SERVER_DEVICE="${GR00T_DEVICE:-cuda:0}"
 
 PORT=$(choose_model_port)
 echo "Using port $PORT for model server"
@@ -586,7 +613,7 @@ elif [ "$MODEL" == "pi0_FAST" ]; then
 
     # capture process group of the server
     SERVER_PGID="$SERVER_PID"
-elif [ "$MODEL" == "GR00T" ]; then
+elif [ "$REALM_MODEL" == "gr00t_n17" ]; then
     if [[ -z "${GR00T_ROOT:-}" ]]; then
         echo "GR00T_ROOT is not set."
         echo "Set it to the Isaac-GR00T root to use, e.g.:"
@@ -702,7 +729,7 @@ case "$EVAL_ENV" in
                 --task_id $TASK_ID \
                 --repeats $REPEATS \
                 --max_steps $MAX_STEPS \
-                --model $MODEL \
+                --model $REALM_MODEL \
                 --port $PORT \
                 $MULTI_VIEW_FLAG \
                 $NO_RENDER_FLAG \
@@ -733,7 +760,7 @@ case "$EVAL_ENV" in
                 --task_id $TASK_ID \
                 --repeats $REPEATS \
                 --max_steps $MAX_STEPS \
-                --model $MODEL \
+                --model $REALM_MODEL \
                 --port $PORT \
                 $MULTI_VIEW_FLAG \
                 $NO_RENDER_FLAG \
@@ -747,7 +774,7 @@ case "$EVAL_ENV" in
             --task_id $TASK_ID \
             --repeats $REPEATS \
             --max_steps $MAX_STEPS \
-            --model $MODEL \
+            --model $REALM_MODEL \
             --port $PORT \
             $MULTI_VIEW_FLAG \
             $NO_RENDER_FLAG \

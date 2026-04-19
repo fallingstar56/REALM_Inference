@@ -89,6 +89,48 @@ examples/02_evaluate.py \
     --experiment_name my_full_eval
 ```
 
+  # GR00T N1.7 evaluation
+
+  REALM's GR00T integration is versioned under `gr00t_n17`. For a manual launch, start the official Isaac-GR00T server first, then start the REALM evaluation client in a second terminal.
+
+  1. Export the shared GR00T settings:
+  ```bash
+  export REALM_ROOT=/path/to/REALM_Inference
+  export GR00T_ROOT=/path/to/Isaac-GR00T
+  export GR00T_MODEL_PATH=/path/to/gr00t/checkpoint
+  export GR00T_EMBODIMENT_TAG=OXE_DROID_RELATIVE_EEF_RELATIVE_JOINT
+  export GR00T_DEVICE=cuda:0
+  ```
+
+  2. Start the GR00T N1.7 server:
+  ```bash
+  cd "$GR00T_ROOT"
+  uv run python gr00t/eval/run_gr00t_server.py \
+    --model-path "$GR00T_MODEL_PATH" \
+    --embodiment-tag "$GR00T_EMBODIMENT_TAG" \
+    --host 0.0.0.0 \
+    --port 5555 \
+    --device "$GR00T_DEVICE"
+  ```
+
+  3. Start REALM evaluation in another terminal:
+  ```bash
+  cd "$REALM_ROOT"
+  OMNIGIBSON_HEADLESS=1 python examples/02_evaluate.py \
+    --perturbation_id 0 \
+    --task_id 0 \
+    --repeats 1 \
+    --max_steps 100 \
+    --model_name gr00t_n17 \
+    --model_type gr00t_n17 \
+    --port 5555 \
+    --experiment_name gr00t_n17_smoke
+  ```
+
+  If the chosen port is already in use, change `--port` on both commands to the same free value.
+
+The wrapper scripts `scripts/eval.sh` and `scripts/cluster_evals/run_single_eval.sh` use the same GR00T settings. `scripts/eval.sh` now accepts `-m gr00t_n17` and will fall back to `GR00T_MODEL_PATH`, `GR00T_EMBODIMENT_TAG`, and `GR00T_DEVICE` when they are exported.
+
 ## Resume Functionality
 
 If a run is interrupted, resume from where it left off by providing the `--resume` flag and the `--run_id` of the previous run (the timestamp folder in your logs directory):

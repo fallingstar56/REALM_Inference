@@ -20,9 +20,9 @@ NO_RENDER_FLAG=""
 ROBOT_FLAG=""
 BASE_PORT=8000
 GR00T_SERVER_ENTRYPOINT="gr00t/eval/run_gr00t_server.py"
-GR00T_EMBODIMENT_TAG="OXE_DROID_RELATIVE_EEF_RELATIVE_JOINT"
+GR00T_EMBODIMENT_TAG="${GR00T_EMBODIMENT_TAG:-OXE_DROID_RELATIVE_EEF_RELATIVE_JOINT}"
 GR00T_SERVER_HOST="0.0.0.0"
-GR00T_SERVER_DEVICE="cuda:0"
+GR00T_SERVER_DEVICE="${GR00T_DEVICE:-cuda:0}"
 MODEL_SERVER_TIMEOUT="${MODEL_SERVER_TIMEOUT:-180}"
 
 PORT_CHECK_CMD=""
@@ -85,6 +85,20 @@ while [[ "$#" -gt 0 ]]; do
   esac
 done
 
+NORMALIZED_MODEL_TYPE="$MODEL_TYPE"
+if [[ "$MODEL_TYPE" == "GR00T" ]]; then
+  NORMALIZED_MODEL_TYPE="gr00t_n17"
+  echo "Warning: MODEL_TYPE=GR00T is a compatibility alias. Prefer MODEL_TYPE=gr00t_n17." >&2
+fi
+
+if [[ "$NORMALIZED_MODEL_TYPE" == "gr00t_n17" && -z "${CHECKPOINT_PATH:-}" && -n "${GR00T_MODEL_PATH:-}" ]]; then
+  CHECKPOINT_PATH="$GR00T_MODEL_PATH"
+fi
+
+if [[ "$NORMALIZED_MODEL_TYPE" == "gr00t_n17" && -z "${POLICY_RUN_DIR:-}" && -n "${GR00T_ROOT:-}" ]]; then
+  POLICY_RUN_DIR="$GR00T_ROOT"
+fi
+
 
 
 #---------------------------------------------------------------------------------
@@ -128,9 +142,13 @@ if [ "$DEBUG" = "false" ]; then
       --bind $CHECKPOINT_PATH:/checkpoint \
       $POLICY_SIF /bin/bash -c "source /opt/conda/etc/profile.d/conda.sh && conda activate && pip install tyro && pip install /app/packages/openpi-client && python /app/inference/run_molmoact_server.py --port=${port}"
     sleep 120
-  elif [ "$MODEL_TYPE" == "GR00T" ]; then
+  elif [ "$NORMALIZED_MODEL_TYPE" == "gr00t_n17" ]; then
     if [[ -z "${POLICY_RUN_DIR:-}" ]]; then
-      echo "POLICY_RUN_DIR is not set for GR00T. Pass the Isaac-GR00T root with --policy_run_dir."
+      echo "POLICY_RUN_DIR is not set for GR00T N1.7. Pass --policy_run_dir or export GR00T_ROOT."
+      exit 1
+    fi
+    if [[ -z "${CHECKPOINT_PATH:-}" ]]; then
+      echo "CHECKPOINT_PATH is not set for GR00T N1.7. Pass --checkpoint_path or export GR00T_MODEL_PATH."
       exit 1
     fi
     if [[ ! -f "$POLICY_RUN_DIR/$GR00T_SERVER_ENTRYPOINT" ]]; then
@@ -207,7 +225,7 @@ apptainer exec \
   --repeats $REPEATS \
   --max_steps $MAX_STEPS \
   --model_name $MODEL_NAME \
-  --model_type $MODEL_TYPE \
+  --model_type $NORMALIZED_MODEL_TYPE \
   --port $port \
   --run_id $RUN_ID \
   --experiment_name $EXPERIMENT_NAME \
