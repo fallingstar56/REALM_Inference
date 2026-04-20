@@ -203,7 +203,17 @@ class Gr00tN17Client:
         array = np.asarray(image)
         if array.ndim != 3 or array.shape[-1] < 3:
             raise ValueError(f"Expected an RGB image with shape (H, W, C), got {array.shape}")
-        array = np.clip(array[..., :3], 0, 255).astype(np.uint8)
+        array = array[..., :3]
+
+        # Omniverse sensors can emit float images in [0, 1].
+        # Scale them before uint8 conversion so GR00T receives real pixel values.
+        if np.issubdtype(array.dtype, np.floating):
+            finite_max = float(np.nanmax(array)) if array.size > 0 else 0.0
+            if finite_max <= 1.0 + 1e-6:
+                array = array * 255.0
+
+        array = np.nan_to_num(array, nan=0.0, posinf=255.0, neginf=0.0)
+        array = np.clip(array, 0, 255).astype(np.uint8)
         image_height, image_width = self.image_size
         resized = Image.fromarray(array).resize((image_width, image_height))
         return np.asarray(resized, dtype=np.uint8)

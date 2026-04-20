@@ -13,6 +13,7 @@ from omnigibson.macros import gm
 
 from realm.environments.env_dynamic import RealmEnvironmentDynamic
 from realm.inference import InferenceClient, extract_from_obs
+from realm.inference.utils import discretize_gripper_action
 from realm.realm_logging import VideoRecorder, save_results, append_trajectory, append_video
 
 
@@ -187,7 +188,11 @@ def evaluate(
         was_grasping = False
 
         while t < max_steps and terminal_steps > 0:
-            base_im, base_depth, base_im_second, base_depth_second, wrist_im, robot_state, gripper_state = extract_from_obs(obs, robot_name=env.robot.name)
+            base_im, base_depth, base_im_second, base_depth_second, wrist_im, robot_state, gripper_state = extract_from_obs(
+                obs,
+                robot_name=env.robot.name,
+                robot=env.robot,
+            )
             use_base_im_second = env.task_type == "open_close_drawer" if hasattr(env, "task_type") else False
 
             if hasattr(client, "observe"):
@@ -230,7 +235,7 @@ def evaluate(
                 # Compute robot-relative cartesian position for models that need it (e.g. DreamZero)
                 _ee_pos = ee_pos.cpu().numpy() if hasattr(ee_pos, 'cpu') else np.array(ee_pos)
                 _ee_rot = ee_rot.cpu().numpy() if hasattr(ee_rot, 'cpu') else np.array(ee_rot)
-                _ee_euler = Rot.from_quat(_ee_rot).as_euler('xyz')
+                _ee_euler = Rot.from_quat(_ee_rot).as_euler('XYZ')
                 _ee_pose_world = np.concatenate([_ee_pos, _ee_euler])
                 cartesian_position = env._world2robot(_ee_pose_world).astype(np.float32)
 
@@ -260,9 +265,15 @@ def evaluate(
 
             new_action = action.copy()
             if model_type in ["debug", "openpi", "GR00T", "gr00t_n17", "GR00T_N16", "dreamzero"]: # TODO: use a model config
-                new_action[-1] = 1 if action[-1] > 0.5 else -1  # Prediction: (1,0) -> Target: (1,-1)
+                new_action[-1] = discretize_gripper_action(
+                    action[-1],
+                    open_if_above_threshold=True,
+                )
             elif model_type == "molmoact":
-                new_action[-1] = 1 if action[-1] < 0.5 else -1  # Prediction: (0,1) -> Target: (1,-1)
+                new_action[-1] = discretize_gripper_action(
+                    action[-1],
+                    open_if_above_threshold=False,
+                )
             else:
                 raise NotImplementedError()
 

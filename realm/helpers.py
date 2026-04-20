@@ -366,8 +366,9 @@ def robot_to_world(action, robot_pos, robot_yaw, base_height=0.0):
     action[1] = sin_y * x_rel + cos_y * y_rel + robot_pos[1]
     action[2] = action[2] + robot_pos[2] + base_height
     R_base = Rotation.from_euler('z', robot_yaw)
-    R_pred = Rotation.from_euler('xyz', action[3:6])
-    action[3:6] = (R_base * R_pred).as_euler('xyz')
+    # Match DROID cartesian_position convention used by GR00T (extrinsic XYZ).
+    R_pred = Rotation.from_euler('XYZ', action[3:6])
+    action[3:6] = (R_base * R_pred).as_euler('XYZ')
     return action
 
 
@@ -381,8 +382,8 @@ def world_to_robot(action, robot_pos, robot_yaw, base_height=0.0):
     action[1] = -sin_y * dx + cos_y * dy
     action[2] = action[2] - robot_pos[2] - base_height
     R_base_inv = Rotation.from_euler('z', robot_yaw).inv()
-    R_world = Rotation.from_euler('xyz', action[3:6])
-    action[3:6] = (R_base_inv * R_world).as_euler('xyz')
+    R_world = Rotation.from_euler('XYZ', action[3:6])
+    action[3:6] = (R_base_inv * R_world).as_euler('XYZ')
     return action
 
 

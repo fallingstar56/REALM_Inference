@@ -110,6 +110,8 @@ class RealmEnvironmentBase:
     # ============================== [STATUS] ==============================
     def get_ee_pose(self):
         ee_link_name = self.robot.eef_link_names[self.robot.default_arm]
+        if ee_link_name == "panda_link8" and "panda_hand_tcp" in self.robot.links:
+            ee_link_name = "panda_hand_tcp"
         ee_link = self.robot.links[ee_link_name]
         return ee_link.get_position_orientation()
 
