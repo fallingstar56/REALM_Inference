@@ -502,11 +502,16 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
             else:
                 ee_pos, ee_quat = self.get_ee_pose()
                 ee_pos = ee_pos.cpu().numpy() if hasattr(ee_pos, 'cpu') else np.array(ee_pos)
-                ee_euler = R.from_quat(ee_quat.cpu().numpy()).as_euler('xyz')
+                ee_euler = R.from_quat(ee_quat.cpu().numpy()).as_euler('XYZ')
                 ee_cmd = self._world2robot(np.concatenate([ee_pos, ee_euler]))
 
+        leave_gripper_open = self.task_progression is not None and "GRASP" in self.task_progression
+
         for t in range(30):
-            gripper_val = np.atleast_1d(1.0 if t < 15 else -1.0)
+            if leave_gripper_open:
+                gripper_val = np.atleast_1d(-1.0 if t < 15 else 1.0)
+            else:
+                gripper_val = np.atleast_1d(1.0 if t < 15 else -1.0)
             if self.ee_control:
                 new_action = np.concatenate((ee_cmd, gripper_val))
             else:
