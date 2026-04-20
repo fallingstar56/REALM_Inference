@@ -18,30 +18,16 @@ def extract_from_obs(obs: dict, robot_name='DROID', enable_depth=False):
         base_im_second = None
         base_depth_second = None
 
-    # Handle wrist camera robustly across robot naming / mounting variants.
-    wrist_im = None
-    if robot_name in obs:
-        robot_obs = obs[robot_name]
-        wrist_cam_key = f'{robot_name}:gripper_link_camera:Camera:0'
-        if wrist_cam_key in robot_obs:
-            wrist_im = robot_obs[wrist_cam_key]['rgb'].cpu().numpy()[..., :3]
-        else:
-            for key, value in robot_obs.items():
-                if 'gripper_link_camera' in key and isinstance(value, dict) and 'rgb' in value:
-                    wrist_im = value['rgb'].cpu().numpy()[..., :3]
-                    break
-    if wrist_im is None:
+    # Handle wrist camera (name can be dynamic based on robot)
+    wrist_cam_key = 'DROID:gripper_link_camera:Camera:0'
+    if robot_name in obs and wrist_cam_key in obs[robot_name]:
+        wrist_im = obs[robot_name][wrist_cam_key]['rgb'].cpu().numpy()[..., :3]
+    else:
         wrist_im = np.zeros((128, 128, 3), dtype=np.uint8)
 
     # Proprio is always present in DROID and other robots
     proprio = obs[robot_name]['proprio'].cpu().numpy()
     robot_state = proprio[:7]
-
-    # DROID exposes multiple finger joints; collapse them to a single normalized scalar.
-    gripper_qpos = proprio[7:9] if proprio.shape[0] >= 9 else proprio[7:8]
-    gripper_state = float(np.mean(gripper_qpos)) if gripper_qpos.size > 0 else 0.0
-    if -1e-4 <= gripper_state <= 0.06:
-        gripper_state = gripper_state / 0.05
-    gripper_state = float(np.clip(gripper_state, 0.0, 1.0))
+    gripper_state = proprio[7] / 0.05  # 0 = open, 0.05 = closed
 
     return base_im, base_depth, base_im_second, base_depth_second, wrist_im, robot_state, gripper_state

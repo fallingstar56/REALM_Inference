@@ -176,7 +176,7 @@ def evaluate(
         t = 0
         task_progression = 0.0
         task_progression_timestamps = []
-        terminal_steps = 50
+        terminal_steps = 15
 
         ee_poses = []
         collisions_self = 0
@@ -228,10 +228,9 @@ def evaluate(
 
             if action_buffer.empty():
                 # Compute robot-relative cartesian position for models that need it (e.g. DreamZero)
-                obs_ee_pos, obs_ee_rot = env.get_observation_ee_pose()
-                _ee_pos = obs_ee_pos.cpu().numpy() if hasattr(obs_ee_pos, 'cpu') else np.array(obs_ee_pos)
-                _ee_rot = obs_ee_rot.cpu().numpy() if hasattr(obs_ee_rot, 'cpu') else np.array(obs_ee_rot)
-                _ee_euler = Rot.from_quat(_ee_rot).as_euler('XYZ')
+                _ee_pos = ee_pos.cpu().numpy() if hasattr(ee_pos, 'cpu') else np.array(ee_pos)
+                _ee_rot = ee_rot.cpu().numpy() if hasattr(ee_rot, 'cpu') else np.array(ee_rot)
+                _ee_euler = Rot.from_quat(_ee_rot).as_euler('xyz')
                 _ee_pose_world = np.concatenate([_ee_pos, _ee_euler])
                 cartesian_position = env._world2robot(_ee_pose_world).astype(np.float32)
 

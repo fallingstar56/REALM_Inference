@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-from scipy.spatial.transform import Rotation
 
 from realm.environments.utils import *
 from realm.helpers import compute_rot_diff_magnitude
@@ -24,7 +23,6 @@ REGISTERED_CONTROLLERS["CustomJointController"] = DROIDJointPDController
 REGISTERED_CONTROLLERS["CustomGripperController"] = DROIDGripperController
 INIT_OPENNESS_FRACTION = 1.0 #0.5
 TASK_PROGRESS_RUBRICS = load_task_progressions()
-_DROID_TCP_OFFSET = np.array([0.0, 0.0, 0.1434], dtype=np.float64)
 
 
 class RealmEnvironmentBase:
@@ -114,22 +112,6 @@ class RealmEnvironmentBase:
         ee_link_name = self.robot.eef_link_names[self.robot.default_arm]
         ee_link = self.robot.links[ee_link_name]
         return ee_link.get_position_orientation()
-
-    def get_observation_ee_pose(self):
-        ee_pos, ee_quat = self.get_ee_pose()
-        ee_link_name = self.robot.eef_link_names[self.robot.default_arm]
-        if ee_link_name != "panda_link8":
-            return ee_pos, ee_quat
-
-        ee_pos_np = ee_pos.detach().cpu().numpy() if hasattr(ee_pos, "detach") else np.asarray(ee_pos)
-        ee_quat_np = ee_quat.detach().cpu().numpy() if hasattr(ee_quat, "detach") else np.asarray(ee_quat)
-        tcp_pos_np = ee_pos_np + Rotation.from_quat(ee_quat_np).apply(_DROID_TCP_OFFSET)
-
-        if hasattr(ee_pos, "detach"):
-            tcp_pos = torch.as_tensor(tcp_pos_np, dtype=ee_pos.dtype, device=ee_pos.device)
-            return tcp_pos, ee_quat
-
-        return tcp_pos_np, ee_quat_np
 
     def check_collisions(self):
         self_collision = False
