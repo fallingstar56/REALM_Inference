@@ -13,7 +13,10 @@ from omnigibson.macros import gm
 
 from realm.environments.env_dynamic import RealmEnvironmentDynamic
 from realm.inference import InferenceClient, extract_from_obs
-from realm.inference.utils import discretize_gripper_action
+from realm.inference.utils import (
+    discretize_gripper_action,
+    model_gripper_position_to_scene_command,
+)
 from realm.realm_logging import VideoRecorder, save_results, append_trajectory, append_video
 
 
@@ -195,16 +198,26 @@ def evaluate(
             )
             use_base_im_second = env.task_type == "open_close_drawer" if hasattr(env, "task_type") else False
 
+            _ee_pos_raw, _ee_rot_raw = env.get_ee_pose()
+            _ee_pos = _ee_pos_raw.cpu().numpy() if hasattr(_ee_pos_raw, 'cpu') else np.array(_ee_pos_raw)
+            _ee_rot = _ee_rot_raw.cpu().numpy() if hasattr(_ee_rot_raw, 'cpu') else np.array(_ee_rot_raw)
+            _ee_euler = Rot.from_quat(_ee_rot).as_euler('XYZ')
+            _ee_pose_world = np.concatenate([_ee_pos, _ee_euler])
+            cartesian_position = env._world2robot(_ee_pose_world).astype(np.float32)
+
             if hasattr(client, "observe"):
                 client.observe(
                     base_im,
                     base_im_second,
                     wrist_im,
                     use_base_im_second=use_base_im_second,
+                    robot_state=robot_state,
+                    gripper_state=gripper_state,
+                    cartesian_position=cartesian_position,
                 )
 
             # Metrics collection
-            ee_pos, ee_rot = env.get_ee_pose()
+            ee_pos, ee_rot = _ee_pos_raw, _ee_rot_raw
             ee_poses.append(ee_pos)
 
             is_self_col, is_env_col = env.check_collisions()
@@ -232,12 +245,11 @@ def evaluate(
             was_grasping = is_grasping
 
             if action_buffer.empty():
-                # Compute robot-relative cartesian position for models that need it (e.g. DreamZero)
-                _ee_pos = ee_pos.cpu().numpy() if hasattr(ee_pos, 'cpu') else np.array(ee_pos)
-                _ee_rot = ee_rot.cpu().numpy() if hasattr(ee_rot, 'cpu') else np.array(ee_rot)
-                _ee_euler = Rot.from_quat(_ee_rot).as_euler('XYZ')
-                _ee_pose_world = np.concatenate([_ee_pos, _ee_euler])
-                cartesian_position = env._world2robot(_ee_pose_world).astype(np.float32)
+                if model_type in ["GR00T", "gr00t_n17"] and t == 0:
+                    og.log.info(
+                        f"[GR00T gripper debug] scene_gripper={float(gripper_state):.4f} "
+                        f"server_gripper={float(gripper_state):.4f}"
+                    )
 
                 pred_action_chunk = client.infer(
                     env.instruction, base_im, base_im_second, wrist_im, robot_state, gripper_state,
@@ -264,7 +276,14 @@ def evaluate(
             actions.append(action)
 
             new_action = action.copy()
-            if model_type in ["debug", "openpi", "GR00T", "gr00t_n17", "GR00T_N16", "dreamzero"]: # TODO: use a model config
+            if model_type in ["GR00T", "gr00t_n17"]:
+                new_action[-1] = model_gripper_position_to_scene_command(action[-1])
+                if t == 0:
+                    og.log.info(
+                        f"[GR00T gripper debug] server_action={float(action[-1]):.4f} "
+                        f"scene_cmd={float(new_action[-1]):.1f} (-1=open, 1=close)"
+                    )
+            elif model_type in ["debug", "openpi", "GR00T_N16", "dreamzero"]: # TODO: use a model config
                 new_action[-1] = discretize_gripper_action(
                     action[-1],
                     open_if_above_threshold=True,

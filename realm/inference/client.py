@@ -5,6 +5,7 @@ import omnigibson as og
 from openpi_client import websocket_client_policy, image_tools
 
 from realm.helpers import axisangle_to_rpy
+from realm.inference.utils import scene_gripper_position_to_model_position
 #from realm.inference.base import ExternalRobotInferenceClient
 #from realm.inference.hamster import HamsterClient
 #from realm.inference.dreamzero import DreamZeroClient
@@ -60,6 +61,17 @@ class InferenceClient:
     def _uses_gr00t_n17_adapter(self):
         return self.model_type in {"gr00t_n17", "GR00T"}
 
+    def _prepare_gripper_state_for_model(self, gripper_state):
+        """Forward the normalized scene gripper scalar to the GR00T DROID client.
+
+        The official GR00T DROID example forwards robot_state['gripper_position']
+        to the policy server without an additional semantic inversion, so REALM
+        should do the same.
+        """
+        if self._uses_gr00t_n17_adapter():
+            return scene_gripper_position_to_model_position(gripper_state)
+        return gripper_state
+
     def infer(self, instruction, base_im, base_im_second, wrist_im, robot_state, gripper_state, use_base_im_second=False, ee_control=False, cartesian_position=None):
         if self.model_type == "debug":
             if ee_control:
@@ -92,6 +104,7 @@ class InferenceClient:
             return pred_action_chunk
 
         elif self._uses_gr00t_n17_adapter():
+            model_gripper_state = self._prepare_gripper_state_for_model(gripper_state)
             pred_action_chunk = self.client.infer_action_chunk(
                 {
                     "instruction": instruction,
@@ -99,7 +112,7 @@ class InferenceClient:
                     "base_im_second": base_im_second,
                     "wrist_im": wrist_im,
                     "robot_state": robot_state,
-                    "gripper_state": gripper_state,
+                    "gripper_state": model_gripper_state,
                     "cartesian_position": cartesian_position,
                     "use_base_im_second": use_base_im_second,
                     "update_frame_buffer": False,
@@ -180,6 +193,9 @@ class InferenceClient:
         base_im_second,
         wrist_im,
         use_base_im_second=False,
+        robot_state=None,
+        gripper_state=None,
+        cartesian_position=None,
     ):
         if self._uses_gr00t_n17_adapter() and hasattr(self.client, "observe"):
             self.client.observe(
@@ -187,4 +203,9 @@ class InferenceClient:
                 base_im_second=base_im_second,
                 wrist_im=wrist_im,
                 use_base_im_second=use_base_im_second,
+                robot_state=robot_state,
+                gripper_state=self._prepare_gripper_state_for_model(gripper_state)
+                if gripper_state is not None
+                else None,
+                cartesian_position=cartesian_position,
             )

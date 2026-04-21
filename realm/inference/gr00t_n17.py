@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import deque
 import importlib
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,36 @@ def _ensure_gr00t_n17_on_path() -> Path | None:
             sys.path.insert(0, candidate_str)
         return candidate
     return None
+
+
+def _candidate_openpi_client_src_roots() -> list[Path]:
+    workspace_root = Path(__file__).resolve().parents[2]
+    return [workspace_root / "packages" / "openpi-client" / "src"]
+
+
+def _load_resize_with_pad():
+    try:
+        from openpi_client.image_tools import resize_with_pad
+
+        return resize_with_pad
+    except ModuleNotFoundError as exc:
+        if exc.name != "openpi_client":
+            raise
+
+    for candidate in _candidate_openpi_client_src_roots():
+        if not candidate.exists():
+            continue
+        candidate_str = str(candidate)
+        if candidate_str not in sys.path:
+            sys.path.insert(0, candidate_str)
+        from openpi_client.image_tools import resize_with_pad
+
+        return resize_with_pad
+
+    raise ImportError(
+        "Could not import openpi_client.image_tools.resize_with_pad. Ensure the REALM "
+        "openpi-client package is installed or available under packages/openpi-client/src."
+    )
 
 
 def _load_gr00t_n17_policy_client_class():
@@ -102,6 +133,18 @@ def _gr00t_n17_action_key_candidates(action_key: str) -> tuple[str, ...]:
     return (action_key, f"action.{action_key}")
 
 
+def _is_wrist_video_key(video_key: str) -> bool:
+    lowered = video_key.lower()
+    return any(token in lowered for token in ("wrist", "hand", "eef", "ee", "gripper"))
+
+
+def _video_stream_index(video_key: str) -> int | None:
+    match = re.search(r"(?:exterior|image)[^0-9]*([0-9]+)", video_key.lower())
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
 class Gr00tN17Client:
     def __init__(
         self,
@@ -133,7 +176,9 @@ class Gr00tN17Client:
         self.state_horizon = 0
         self.action_horizon = 0
         self.video_history_len = 1
+        self.state_history_len = 1
         self._frame_buffer: deque[dict[str, Any]] = deque(maxlen=1)
+        self._state_buffer: deque[dict[str, Any]] = deque(maxlen=1)
         self._observation_stats_printed = False
 
         client_cls = policy_client_cls or _load_gr00t_n17_policy_client_class()
@@ -188,7 +233,12 @@ class Gr00tN17Client:
             max(-min(self.video_delta_indices), 0) + 1 if self.video_delta_indices else 1
         )
         self.video_history_len = max(history_window, self.video_horizon, 1)
+        state_history_window = (
+            max(-min(self.state_delta_indices), 0) + 1 if self.state_delta_indices else 1
+        )
+        self.state_history_len = max(state_history_window, self.state_horizon, 1)
         self._frame_buffer = deque(maxlen=self.video_history_len)
+        self._state_buffer = deque(maxlen=self.state_history_len)
 
     def get_modality_config(self, refresh: bool = False) -> dict[str, Any]:
         if refresh or self._modality_config is None:
@@ -198,7 +248,6 @@ class Gr00tN17Client:
 
     def _prepare_image(self, image: Any) -> Any:
         import numpy as np
-        from PIL import Image
 
         array = np.asarray(image)
         if array.ndim != 3 or array.shape[-1] < 3:
@@ -215,8 +264,74 @@ class Gr00tN17Client:
         array = np.nan_to_num(array, nan=0.0, posinf=255.0, neginf=0.0)
         array = np.clip(array, 0, 255).astype(np.uint8)
         image_height, image_width = self.image_size
-        resized = Image.fromarray(array).resize((image_width, image_height))
-        return np.asarray(resized, dtype=np.uint8)
+        resize_with_pad = _load_resize_with_pad()
+        return np.asarray(
+            resize_with_pad(array, image_height, image_width),
+            dtype=np.uint8,
+        )
+
+    def _resolve_video_frame_sources(
+        self,
+        *,
+        base_im: Any,
+        wrist_im: Any,
+        base_im_second: Any | None = None,
+        use_base_im_second: bool = False,
+    ) -> dict[str, Any]:
+        selected_exterior = base_im_second if use_base_im_second and base_im_second is not None else base_im
+        alternate_exteriors: list[Any] = []
+        if use_base_im_second:
+            if base_im is not None:
+                alternate_exteriors.append(base_im)
+        elif base_im_second is not None:
+            alternate_exteriors.append(base_im_second)
+
+        prepared_wrist = self._prepare_image(wrist_im)
+        prepared_selected_exterior = self._prepare_image(selected_exterior)
+        prepared_alternate_exteriors = [
+            self._prepare_image(image)
+            for image in alternate_exteriors
+            if image is not None
+        ]
+        prepared_exteriors = [prepared_selected_exterior, *prepared_alternate_exteriors]
+
+        resolved_frames: dict[str, Any] = {}
+        for video_key in self.video_keys:
+            if _is_wrist_video_key(video_key):
+                resolved_frames[video_key] = prepared_wrist
+                continue
+
+            stream_index = _video_stream_index(video_key)
+            if stream_index is None or stream_index < 1:
+                resolved_frames[video_key] = prepared_selected_exterior
+                continue
+
+            resolved_idx = min(stream_index - 1, len(prepared_exteriors) - 1)
+            resolved_frames[video_key] = prepared_exteriors[resolved_idx]
+
+        return resolved_frames
+
+    def _build_state_snapshot(
+        self,
+        *,
+        robot_state: Any,
+        gripper_state: Any,
+        cartesian_position: Any,
+    ) -> dict[str, Any]:
+        import numpy as np
+
+        state_sources = {
+            "joint_position": np.asarray(robot_state, dtype=np.float32).reshape(-1),
+            "gripper_position": np.asarray(gripper_state, dtype=np.float32).reshape(-1),
+            "eef_9d": compute_gr00t_n17_eef_9d(cartesian_position),
+        }
+
+        state_snapshot: dict[str, Any] = {}
+        for state_key in self.state_keys:
+            if state_key not in state_sources:
+                raise KeyError(f"Unsupported GR00T N1.7 state key: {state_key}")
+            state_snapshot[state_key] = state_sources[state_key].astype(np.float32, copy=False)
+        return state_snapshot
 
     def observe(
         self,
@@ -225,18 +340,29 @@ class Gr00tN17Client:
         wrist_im: Any,
         base_im_second: Any | None = None,
         use_base_im_second: bool = False,
+        robot_state: Any | None = None,
+        gripper_state: Any | None = None,
+        cartesian_position: Any | None = None,
     ) -> None:
         if not self.video_keys:
             self.get_modality_config()
 
-        exterior_image = base_im_second if use_base_im_second and base_im_second is not None else base_im
-        prepared_frames: dict[str, Any] = {}
-        for video_key in self.video_keys:
-            if "wrist" in video_key:
-                prepared_frames[video_key] = self._prepare_image(wrist_im)
-            else:
-                prepared_frames[video_key] = self._prepare_image(exterior_image)
+        prepared_frames = self._resolve_video_frame_sources(
+            base_im=base_im,
+            wrist_im=wrist_im,
+            base_im_second=base_im_second,
+            use_base_im_second=use_base_im_second,
+        )
         self._frame_buffer.append(prepared_frames)
+
+        if robot_state is not None and gripper_state is not None and cartesian_position is not None:
+            self._state_buffer.append(
+                self._build_state_snapshot(
+                    robot_state=robot_state,
+                    gripper_state=gripper_state,
+                    cartesian_position=cartesian_position,
+                )
+            )
 
     def _build_video_observation(self) -> dict[str, Any]:
         import numpy as np
@@ -259,26 +385,33 @@ class Gr00tN17Client:
     def _build_state_observation(
         self,
         *,
-        robot_state: Any,
-        gripper_state: Any,
-        cartesian_position: Any,
+        robot_state: Any | None = None,
+        gripper_state: Any | None = None,
+        cartesian_position: Any | None = None,
     ) -> dict[str, Any]:
         import numpy as np
 
-        state_sources = {
-            "joint_position": np.asarray(robot_state, dtype=np.float32).reshape(-1),
-            "gripper_position": np.asarray(gripper_state, dtype=np.float32).reshape(-1),
-            "eef_9d": compute_gr00t_n17_eef_9d(cartesian_position),
-        }
+        if not self._state_buffer:
+            if robot_state is None or gripper_state is None or cartesian_position is None:
+                raise ValueError(
+                    "GR00T N1.7 state buffer is empty. Provide robot_state, gripper_state, and cartesian_position before requesting an action."
+                )
+            self._state_buffer.append(
+                self._build_state_snapshot(
+                    robot_state=robot_state,
+                    gripper_state=gripper_state,
+                    cartesian_position=cartesian_position,
+                )
+            )
 
         state_observation: dict[str, Any] = {}
+        last_idx = len(self._state_buffer) - 1
         for state_key in self.state_keys:
-            if state_key not in state_sources:
-                raise KeyError(f"Unsupported GR00T N1.7 state key: {state_key}")
-            value = state_sources[state_key].reshape(1, 1, -1).astype(np.float32)
-            if self.state_horizon > 1:
-                value = np.repeat(value, self.state_horizon, axis=1)
-            state_observation[state_key] = value
+            states = []
+            for delta_idx in self.state_delta_indices:
+                state_idx = min(max(last_idx + delta_idx, 0), last_idx)
+                states.append(self._state_buffer[state_idx][state_key])
+            state_observation[state_key] = np.stack(states, axis=0)[None, ...].astype(np.float32)
         return state_observation
 
     def _build_language_observation(self, instruction: str) -> dict[str, list[list[str]]]:
@@ -332,6 +465,9 @@ class Gr00tN17Client:
                 wrist_im=wrist_im,
                 base_im_second=base_im_second,
                 use_base_im_second=use_base_im_second,
+                robot_state=robot_state,
+                gripper_state=gripper_state,
+                cartesian_position=cartesian_position,
             )
 
         observation = {
@@ -460,6 +596,7 @@ class Gr00tN17Client:
 
     def reset(self, options: dict[str, Any] | None = None) -> dict[str, Any]:
         self._frame_buffer.clear()
+        self._state_buffer.clear()
         self._observation_stats_printed = False
         return self._client.reset(options=options)
 
