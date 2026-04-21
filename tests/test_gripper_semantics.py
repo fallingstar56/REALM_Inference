@@ -9,7 +9,13 @@ PROJECT_ROOT = Path(__file__).parent.parent.absolute()
 sys.path.append(str(PROJECT_ROOT))
 
 
-from realm.inference.utils import discretize_gripper_action, extract_from_obs, normalize_gripper_position
+from realm.inference.utils import (
+    discretize_gripper_action,
+    extract_from_obs,
+    model_gripper_position_to_scene_command,
+    normalize_gripper_position,
+    scene_gripper_position_to_model_position,
+)
 
 
 class _FakeController:
@@ -71,3 +77,25 @@ def test_discretize_gripper_action_matches_realm_controller_semantics():
     assert discretize_gripper_action(0.25, open_if_above_threshold=True) == -1.0
     assert discretize_gripper_action(0.25, open_if_above_threshold=False) == 1.0
     assert discretize_gripper_action(0.75, open_if_above_threshold=False) == -1.0
+
+
+def test_gr00t_gripper_state_conversion_preserves_position_scalar():
+    assert np.isclose(scene_gripper_position_to_model_position(1.0), 1.0)
+    assert np.isclose(scene_gripper_position_to_model_position(0.25), 0.25)
+    assert np.isclose(scene_gripper_position_to_model_position(0.0), 0.0)
+
+
+def test_gr00t_gripper_action_conversion_matches_scene_controller():
+    assert model_gripper_position_to_scene_command(0.0) == -1.0
+    assert model_gripper_position_to_scene_command(0.25) == -1.0
+    assert model_gripper_position_to_scene_command(0.75) == 1.0
+    assert model_gripper_position_to_scene_command(1.0) == 1.0
+
+
+def test_gr00t_gripper_round_trip_stays_semantically_aligned():
+    assert model_gripper_position_to_scene_command(
+        scene_gripper_position_to_model_position(1.0)
+    ) == 1.0
+    assert model_gripper_position_to_scene_command(
+        scene_gripper_position_to_model_position(0.0)
+    ) == -1.0

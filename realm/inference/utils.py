@@ -1,6 +1,17 @@
 import numpy as np
 
 
+def _sensor_sort_key(name):
+    if not isinstance(name, str):
+        return (1, "", 0)
+
+    prefix = name.rstrip("0123456789")
+    suffix = name[len(prefix) :]
+    if suffix.isdigit():
+        return (0, prefix, int(suffix))
+    return (0, name, 0)
+
+
 def _to_numpy(value):
     if hasattr(value, "cpu"):
         return value.cpu().numpy()
@@ -28,13 +39,35 @@ def _extract_wrist_key(robot_obs: dict, robot_name: str):
     if preferred in robot_obs:
         return preferred
 
+    wrist_candidates = []
     for key in robot_obs:
         if not isinstance(key, str):
             continue
         lowered = key.lower()
-        if "camera" in lowered and "gripper" in lowered:
+        if "camera" not in lowered:
+            continue
+        if "gripper" in lowered:
             return key
+        if any(token in lowered for token in ("wrist", "hand", "eef", "ee")):
+            wrist_candidates.append(key)
+
+    if wrist_candidates:
+        return sorted(wrist_candidates, key=_sensor_sort_key)[0]
     return None
+
+
+def _sorted_external_sensors(external_obs: dict):
+    sensors = []
+    for key, value in external_obs.items():
+        if not isinstance(key, str):
+            continue
+        if not isinstance(value, dict):
+            continue
+        if "sensor" not in key.lower():
+            continue
+        sensors.append((key, value))
+    sensors.sort(key=lambda item: _sensor_sort_key(item[0]))
+    return sensors
 
 
 def _extract_gripper_limits_from_robot(robot):
@@ -114,10 +147,21 @@ def discretize_gripper_action(value, threshold=0.5, open_if_above_threshold=Fals
     return 1.0 if should_open else -1.0
 
 
+def scene_gripper_position_to_model_position(value):
+    scalar = float(np.asarray(value, dtype=np.float32).reshape(-1)[0])
+    return float(np.clip(scalar, 0.0, 1.0))
+
+
+def model_gripper_position_to_scene_command(value, threshold=0.5):
+    scalar = float(np.asarray(value, dtype=np.float32).reshape(-1)[0])
+    return -1.0 if scalar < threshold else 1.0
+
+
 def extract_from_obs(obs: dict, robot_name="DROID", enable_depth=False, robot=None):
     external_obs = obs.get("external", {})
 
-    sensor0 = external_obs.get("external_sensor0")
+    external_sensors = _sorted_external_sensors(external_obs)
+    sensor0 = external_sensors[0][1] if external_sensors else None
     base_im = _extract_rgb(sensor0)
     if base_im is None:
         base_im = np.zeros((128, 128, 3), dtype=np.uint8)
@@ -125,7 +169,7 @@ def extract_from_obs(obs: dict, robot_name="DROID", enable_depth=False, robot=No
     if enable_depth and base_depth is None:
         base_depth = np.zeros(base_im.shape[:2], dtype=np.float32)
 
-    sensor1 = external_obs.get("external_sensor1")
+    sensor1 = external_sensors[1][1] if len(external_sensors) > 1 else None
     base_im_second = _extract_rgb(sensor1)
     base_depth_second = _extract_depth(sensor1) if enable_depth else None
 
@@ -140,18 +184,21 @@ def extract_from_obs(obs: dict, robot_name="DROID", enable_depth=False, robot=No
     proprio = _to_numpy(robot_obs["proprio"]).astype(np.float32).reshape(-1)
     robot_state = proprio[:7]
 
+    """
     if proprio.size >= 9:
         finger_qpos = proprio[7:9]
     elif proprio.size >= 8:
-        finger_qpos = proprio[7:8]
+        finger_qpos = proprio[7:8] 
     else:
         finger_qpos = proprio[-1:]
-
+        
     open_qpos, closed_qpos = _extract_gripper_limits_from_robot(robot)
     gripper_state = normalize_gripper_position(
         finger_qpos,
         open_qpos=open_qpos,
         closed_qpos=closed_qpos,
     )
+    """
+    gripper_state = proprio[7] / 0.05
 
     return base_im, base_depth, base_im_second, base_depth_second, wrist_im, robot_state, gripper_state
