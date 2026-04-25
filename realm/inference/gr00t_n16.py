@@ -1,24 +1,26 @@
 from __future__ import annotations
 
-from collections import deque
 import importlib
 import os
 import re
 import sys
+import types
+from collections import deque
 from pathlib import Path
 from typing import Any
 
+from realm.inference.gr00t_n17 import _load_resize_with_pad
 
-def _candidate_gr00t_n17_roots() -> list[Path]:
+
+def _candidate_gr00t_n16_roots() -> list[Path]:
     env_roots = [
-        os.environ.get("GR00T_ROOT"),
-        os.environ.get("ISAAC_GR00T_ROOT"),
-        os.environ.get("POLICY_RUN_DIR"),
+        os.environ.get("GR00T_N16_ROOT"),
+        os.environ.get("ISAAC_GR00T_N16_ROOT"),
     ]
     workspace_root = Path(__file__).resolve().parents[2]
     candidates = [
-        workspace_root / "Isaac-GR00T",
-        workspace_root.parent / "Isaac-GR00T",
+        workspace_root / "Isaac-GR00T-n1.6-release",
+        workspace_root.parent / "Isaac-GR00T-n1.6-release",
     ]
 
     resolved: list[Path] = []
@@ -30,8 +32,8 @@ def _candidate_gr00t_n17_roots() -> list[Path]:
     return resolved
 
 
-def _ensure_gr00t_n17_on_path() -> Path | None:
-    for candidate in _candidate_gr00t_n17_roots():
+def _ensure_gr00t_n16_on_path() -> Path | None:
+    for candidate in _candidate_gr00t_n16_roots():
         if not candidate.exists():
             continue
         if not (candidate / "gr00t" / "policy" / "server_client.py").is_file():
@@ -49,6 +51,16 @@ def _clear_gr00t_modules() -> None:
             sys.modules.pop(module_name, None)
 
 
+def _module_has_search_path(module: Any, expected_path: Path) -> bool:
+    module_paths = getattr(module, "__path__", None)
+    if not module_paths:
+        return False
+    try:
+        return any(Path(path).resolve() == expected_path for path in module_paths)
+    except OSError:
+        return False
+
+
 def _module_loaded_from_root(module: Any, root: Path) -> bool:
     module_file = getattr(module, "__file__", None)
     if not module_file:
@@ -59,72 +71,21 @@ def _module_loaded_from_root(module: Any, root: Path) -> bool:
         return False
 
 
-def _candidate_openpi_client_src_roots() -> list[Path]:
-    workspace_root = Path(__file__).resolve().parents[2]
-    return [workspace_root / "packages" / "openpi-client" / "src"]
-
-
-def _load_resize_with_pad():
-    try:
-        from openpi_client.image_tools import resize_with_pad
-
-        return resize_with_pad
-    except ModuleNotFoundError as exc:
-        if exc.name != "openpi_client":
-            raise
-
-    for candidate in _candidate_openpi_client_src_roots():
-        if not candidate.exists():
+def _install_gr00t_n16_package_stubs(root: Path) -> None:
+    package_roots = {
+        "gr00t": root / "gr00t",
+        "gr00t.policy": root / "gr00t" / "policy",
+    }
+    for module_name, package_root in package_roots.items():
+        existing_module = sys.modules.get(module_name)
+        if existing_module is not None and _module_has_search_path(existing_module, package_root):
             continue
-        candidate_str = str(candidate)
-        if candidate_str not in sys.path:
-            sys.path.insert(0, candidate_str)
-        from openpi_client.image_tools import resize_with_pad
 
-        return resize_with_pad
-
-    raise ImportError(
-        "Could not import openpi_client.image_tools.resize_with_pad. Ensure the REALM "
-        "openpi-client package is installed or available under packages/openpi-client/src."
-    )
-
-
-def _load_gr00t_n17_policy_client_class():
-    root = _ensure_gr00t_n17_on_path()
-    if root is None:
-        raise ImportError(
-            "Could not locate Isaac-GR00T. Set GR00T_ROOT (or ISAAC_GR00T_ROOT) to the "
-            "Isaac-GR00T repository root so REALM can import gr00t.policy.server_client.PolicyClient."
-        )
-
-    existing_module = sys.modules.get("gr00t.policy.server_client")
-    if existing_module is not None and _module_loaded_from_root(existing_module, root):
-        return existing_module.PolicyClient
-    if existing_module is not None:
-        _clear_gr00t_modules()
-
-    try:
-        module = importlib.import_module("gr00t.policy.server_client")
-    except Exception as exc:
-        raise ImportError(
-            f"Failed to import Isaac-GR00T GR00T N1.7 PolicyClient from {root}. "
-            "Ensure the Isaac-GR00T environment dependencies are installed."
-        ) from exc
-
-    if not _module_loaded_from_root(module, root):
-        raise ImportError(
-            f"Imported gr00t.policy.server_client from an unexpected location while "
-            f"loading Isaac-GR00T GR00T N1.7: {getattr(module, '__file__', '<unknown>')}"
-        )
-    return module.PolicyClient
-
-
-GR00T_N17_DEFAULT_IMAGE_SIZE = (180, 320)
-GR00T_N17_DROID_EEF_ROTATION_CORRECT = (
-    (0.0, 0.0, -1.0),
-    (-1.0, 0.0, 0.0),
-    (0.0, 1.0, 0.0),
-)
+        package_stub = types.ModuleType(module_name)
+        package_stub.__file__ = str(package_root / "__init__.py")
+        package_stub.__package__ = module_name
+        package_stub.__path__ = [str(package_root)]
+        sys.modules[module_name] = package_stub
 
 
 def _cfg_value(config: Any, key: str) -> Any:
@@ -133,23 +94,10 @@ def _cfg_value(config: Any, key: str) -> Any:
     return getattr(config, key)
 
 
-def compute_gr00t_n17_eef_9d(cartesian_position: Any) -> Any:
-    import numpy as np
-    from scipy.spatial.transform import Rotation
-
-    cartesian = np.asarray(cartesian_position, dtype=np.float64).reshape(6)
-    xyz = cartesian[:3]
-    euler = cartesian[3:6]
-    rot_robot = Rotation.from_euler("XYZ", euler).as_matrix()
-    rot_mat = rot_robot @ np.asarray(GR00T_N17_DROID_EEF_ROTATION_CORRECT, dtype=np.float64)
-    rot6d = rot_mat[:2, :].reshape(6)
-    return np.concatenate([xyz, rot6d]).astype(np.float32)
-
-
-def _gr00t_n17_action_key_candidates(action_key: str) -> tuple[str, ...]:
+def _gr00t_n16_action_key_candidates(action_key: str) -> tuple[str, ...]:
     if action_key.startswith("action."):
         return (action_key, action_key.removeprefix("action."))
-    return (action_key, f"action.{action_key}")
+    return (f"action.{action_key}", action_key)
 
 
 def _is_wrist_video_key(video_key: str) -> bool:
@@ -158,14 +106,52 @@ def _is_wrist_video_key(video_key: str) -> bool:
 
 
 def _video_stream_index(video_key: str) -> int | None:
-    
     match = re.search(r"(?:exterior|image)[^0-9]*([0-9]+)", video_key.lower())
     if match is None:
         return None
     return int(match.group(1))
 
 
-class Gr00tN17Client:
+def _load_gr00t_n16_policy_client_class():
+    root = _ensure_gr00t_n16_on_path()
+    if root is None:
+        raise ImportError(
+            "Could not locate Isaac-GR00T-n1.6-release. Set GR00T_N16_ROOT "
+            "(or ISAAC_GR00T_N16_ROOT) to the Isaac-GR00T N1.6 repository root so "
+            "REALM can import gr00t.policy.server_client.PolicyClient."
+        )
+
+    existing_module = sys.modules.get("gr00t.policy.server_client")
+    if existing_module is not None and _module_loaded_from_root(existing_module, root):
+        return existing_module.PolicyClient
+    if existing_module is not None:
+        _clear_gr00t_modules()
+
+    _install_gr00t_n16_package_stubs(root)
+
+    try:
+        module = importlib.import_module("gr00t.policy.server_client")
+    except Exception as exc:
+        _clear_gr00t_modules()
+        raise ImportError(
+            f"Failed to import Isaac-GR00T N1.6 PolicyClient from {root}. "
+            "Ensure the Isaac-GR00T N1.6 client runtime dependencies are installed."
+        ) from exc
+
+    if not _module_loaded_from_root(module, root):
+        raise ImportError(
+            f"Imported gr00t.policy.server_client from an unexpected location while "
+            f"loading Isaac-GR00T N1.6: {getattr(module, '__file__', '<unknown>')}"
+        )
+    return module.PolicyClient
+
+
+GR00T_N16_DEFAULT_IMAGE_SIZE = (180, 320)
+GR00T_N16_SUPPORTED_STATE_KEYS = {"joint_position", "gripper_position"}
+GR00T_N16_SUPPORTED_ACTION_KEYS = {"joint_position", "gripper_position"}
+
+
+class Gr00tN16Client:
     def __init__(
         self,
         host: str = "localhost",
@@ -173,7 +159,7 @@ class Gr00tN17Client:
         timeout_ms: int = 15000,
         api_token: str | None = None,
         strict: bool = False,
-        image_size: tuple[int, int] = GR00T_N17_DEFAULT_IMAGE_SIZE,
+        image_size: tuple[int, int] = GR00T_N16_DEFAULT_IMAGE_SIZE,
         print_observation_stats: bool = True,
         policy_client_cls: type[Any] | None = None,
     ):
@@ -199,9 +185,11 @@ class Gr00tN17Client:
         self.state_history_len = 1
         self._frame_buffer: deque[dict[str, Any]] = deque(maxlen=1)
         self._state_buffer: deque[dict[str, Any]] = deque(maxlen=1)
+        self.exterior_video_key: str | None = None
+        self.wrist_video_key: str | None = None
         self._observation_stats_printed = False
 
-        client_cls = policy_client_cls or _load_gr00t_n17_policy_client_class()
+        client_cls = policy_client_cls or _load_gr00t_n16_policy_client_class()
         self._client = client_cls(
             host=host,
             port=port,
@@ -217,7 +205,7 @@ class Gr00tN17Client:
     def connect(self, fetch_modality_config: bool = True) -> dict[str, Any] | None:
         if not self.ping():
             raise ConnectionError(
-                f"Failed to reach GR00T N1.7 server at tcp://{self.host}:{self.port}"
+                f"Failed to reach GR00T N1.6 server at tcp://{self.host}:{self.port}"
             )
         if fetch_modality_config:
             return self.get_modality_config(refresh=True)
@@ -246,8 +234,19 @@ class Gr00tN17Client:
 
         language_keys = list(_cfg_value(language_config, "modality_keys"))
         if not language_keys:
-            raise ValueError("GR00T N1.7 modality config is missing a language key")
+            raise ValueError("GR00T N1.6 modality config is missing a language key")
         self.language_key = language_keys[0]
+
+        self.wrist_video_key = next(
+            (video_key for video_key in self.video_keys if _is_wrist_video_key(video_key)),
+            None,
+        )
+        self.exterior_video_key = next(
+            (video_key for video_key in self.video_keys if video_key != self.wrist_video_key),
+            None,
+        )
+
+        self._validate_supported_modality()
 
         history_window = (
             max(-min(self.video_delta_indices), 0) + 1 if self.video_delta_indices else 1
@@ -259,6 +258,30 @@ class Gr00tN17Client:
         self.state_history_len = max(state_history_window, self.state_horizon, 1)
         self._frame_buffer = deque(maxlen=self.video_history_len)
         self._state_buffer = deque(maxlen=self.state_history_len)
+
+    def _validate_supported_modality(self) -> None:
+        state_keys = set(self.state_keys)
+        action_keys = set(self.action_keys)
+        unsupported_state_keys = sorted(state_keys - GR00T_N16_SUPPORTED_STATE_KEYS)
+        unsupported_action_keys = sorted(action_keys - GR00T_N16_SUPPORTED_ACTION_KEYS)
+        missing_state_keys = sorted(GR00T_N16_SUPPORTED_STATE_KEYS - state_keys)
+        missing_action_keys = sorted(GR00T_N16_SUPPORTED_ACTION_KEYS - action_keys)
+
+        if (
+            unsupported_state_keys
+            or unsupported_action_keys
+            or missing_state_keys
+            or missing_action_keys
+        ):
+            raise ValueError(
+                "GR00T N1.6 REALM adapter supports the OXE_DROID joint/gripper modality only. "
+                f"Received state_keys={self.state_keys}, action_keys={self.action_keys}. "
+                f"Unsupported state keys={unsupported_state_keys}, unsupported action keys={unsupported_action_keys}, "
+                f"missing state keys={missing_state_keys}, missing action keys={missing_action_keys}. "
+                "If you intended to run GR00T N1.7, use model_type='gr00t_n17'. "
+                "If you intended to run GR00T N1.6, restart the N1.6 server with "
+                "--embodiment-tag OXE_DROID --use_sim_policy_wrapper."
+            )
 
     def get_modality_config(self, refresh: bool = False) -> dict[str, Any]:
         if refresh or self._modality_config is None:
@@ -274,8 +297,6 @@ class Gr00tN17Client:
             raise ValueError(f"Expected an RGB image with shape (H, W, C), got {array.shape}")
         array = array[..., :3]
 
-        # Omniverse sensors can emit float images in [0, 1].
-        # Scale them before uint8 conversion so GR00T receives real pixel values.
         if np.issubdtype(array.dtype, np.floating):
             finite_max = float(np.nanmax(array)) if array.size > 0 else 0.0
             if finite_max <= 1.0 + 1e-6:
@@ -328,28 +349,20 @@ class Gr00tN17Client:
 
             resolved_idx = min(stream_index - 1, len(prepared_exteriors) - 1)
             resolved_frames[video_key] = prepared_exteriors[resolved_idx]
-
         return resolved_frames
 
-    def _build_state_snapshot(
-        self,
-        *,
-        robot_state: Any,
-        gripper_state: Any,
-        cartesian_position: Any,
-    ) -> dict[str, Any]:
+    def _build_state_snapshot(self, *, robot_state: Any, gripper_state: Any) -> dict[str, Any]:
         import numpy as np
 
         state_sources = {
             "joint_position": np.asarray(robot_state, dtype=np.float32).reshape(-1),
             "gripper_position": np.asarray(gripper_state, dtype=np.float32).reshape(-1),
-            "eef_9d": compute_gr00t_n17_eef_9d(cartesian_position),
         }
 
         state_snapshot: dict[str, Any] = {}
         for state_key in self.state_keys:
             if state_key not in state_sources:
-                raise KeyError(f"Unsupported GR00T N1.7 state key: {state_key}")
+                raise KeyError(f"Unsupported GR00T N1.6 state key: {state_key}")
             state_snapshot[state_key] = state_sources[state_key].astype(np.float32, copy=False)
         return state_snapshot
 
@@ -362,7 +375,7 @@ class Gr00tN17Client:
         use_base_im_second: bool = False,
         robot_state: Any | None = None,
         gripper_state: Any | None = None,
-        cartesian_position: Any | None = None,
+        **_: Any,
     ) -> None:
         if not self.video_keys:
             self.get_modality_config()
@@ -375,12 +388,11 @@ class Gr00tN17Client:
         )
         self._frame_buffer.append(prepared_frames)
 
-        if robot_state is not None and gripper_state is not None and cartesian_position is not None:
+        if robot_state is not None and gripper_state is not None:
             self._state_buffer.append(
                 self._build_state_snapshot(
                     robot_state=robot_state,
                     gripper_state=gripper_state,
-                    cartesian_position=cartesian_position,
                 )
             )
 
@@ -389,7 +401,7 @@ class Gr00tN17Client:
 
         if not self._frame_buffer:
             raise ValueError(
-                "GR00T N1.7 frame buffer is empty. Call observe() before requesting an action."
+                "GR00T N1.6 frame buffer is empty. Call observe() before requesting an action."
             )
 
         last_idx = len(self._frame_buffer) - 1
@@ -399,7 +411,7 @@ class Gr00tN17Client:
             for delta_idx in self.video_delta_indices:
                 frame_idx = min(max(last_idx + delta_idx, 0), last_idx)
                 frames.append(self._frame_buffer[frame_idx][video_key])
-            video_observation[video_key] = np.stack(frames, axis=0)[None, ...].astype(np.uint8)
+            video_observation[f"video.{video_key}"] = np.stack(frames, axis=0)[None, ...].astype(np.uint8)
         return video_observation
 
     def _build_state_observation(
@@ -407,60 +419,48 @@ class Gr00tN17Client:
         *,
         robot_state: Any | None = None,
         gripper_state: Any | None = None,
-        cartesian_position: Any | None = None,
     ) -> dict[str, Any]:
         import numpy as np
 
         if not self._state_buffer:
-            if robot_state is None or gripper_state is None or cartesian_position is None:
+            if robot_state is None or gripper_state is None:
                 raise ValueError(
-                    "GR00T N1.7 state buffer is empty. Provide robot_state, gripper_state, and cartesian_position before requesting an action."
+                    "GR00T N1.6 state buffer is empty. Provide robot_state and gripper_state before requesting an action."
                 )
             self._state_buffer.append(
                 self._build_state_snapshot(
                     robot_state=robot_state,
                     gripper_state=gripper_state,
-                    cartesian_position=cartesian_position,
                 )
             )
 
-        state_observation: dict[str, Any] = {}
         last_idx = len(self._state_buffer) - 1
+        state_observation: dict[str, Any] = {}
         for state_key in self.state_keys:
             states = []
             for delta_idx in self.state_delta_indices:
                 state_idx = min(max(last_idx + delta_idx, 0), last_idx)
                 states.append(self._state_buffer[state_idx][state_key])
-            state_observation[state_key] = np.stack(states, axis=0)[None, ...].astype(np.float32)
+            state_observation[f"state.{state_key}"] = np.stack(states, axis=0)[None, ...].astype(np.float32)
         return state_observation
-
-    def _build_language_observation(self, instruction: str) -> dict[str, list[list[str]]]:
-        if self.language_key is None:
-            self.get_modality_config()
-        return {self.language_key: [[instruction]]}
 
     def _print_observation_stats(self, observation: dict[str, Any]) -> None:
         if not self.print_observation_stats or self._observation_stats_printed:
             return
 
-        for modality_name in ("video", "state"):
-            for key, value in observation[modality_name].items():
+        for key, value in observation.items():
+            if hasattr(value, "shape") and hasattr(value, "dtype"):
                 print(
-                    f"[GR00T N1.7 observation] {modality_name}.{key}: "
+                    f"[GR00T N1.6 observation] {key}: "
                     f"shape={value.shape} dtype={value.dtype} min={value.min()} max={value.max()}",
                     flush=True,
                 )
-
-        for key, value in observation["language"].items():
-            rows = len(value)
-            cols = len(value[0]) if value else 0
-            flat = [item for batch in value for item in batch]
-            print(
-                f"[GR00T N1.7 observation] language.{key}: "
-                f"shape=({rows}, {cols}) dtype=str min={min(flat)!r} max={max(flat)!r}",
-                flush=True,
-            )
-
+            else:
+                print(
+                    f"[GR00T N1.6 observation] {key}: "
+                    f"shape=({len(value)},) dtype={type(value[0]).__name__}",
+                    flush=True,
+                )
         self._observation_stats_printed = True
 
     def build_observation(
@@ -471,13 +471,17 @@ class Gr00tN17Client:
         wrist_im: Any,
         robot_state: Any,
         gripper_state: Any,
-        cartesian_position: Any,
         base_im_second: Any | None = None,
         use_base_im_second: bool = False,
         update_frame_buffer: bool = True,
     ) -> dict[str, Any]:
         if self._modality_config is None:
             self.get_modality_config()
+
+        if self.exterior_video_key is None or self.wrist_video_key is None:
+            raise ValueError(
+                "GR00T N1.6 modality config must include one exterior video key and one wrist video key"
+            )
 
         if update_frame_buffer or not self._frame_buffer:
             self.observe(
@@ -487,18 +491,17 @@ class Gr00tN17Client:
                 use_base_im_second=use_base_im_second,
                 robot_state=robot_state,
                 gripper_state=gripper_state,
-                cartesian_position=cartesian_position,
             )
 
-        observation = {
-            "video": self._build_video_observation(),
-            "state": self._build_state_observation(
+        observation = {}
+        observation.update(self._build_video_observation())
+        observation.update(
+            self._build_state_observation(
                 robot_state=robot_state,
                 gripper_state=gripper_state,
-                cartesian_position=cartesian_position,
-            ),
-            "language": self._build_language_observation(str(instruction)),
-        }
+            )
+        )
+        observation[str(self.language_key)] = [str(instruction)]
         self._print_observation_stats(observation)
         return observation
 
@@ -513,7 +516,7 @@ class Gr00tN17Client:
         joint_key = next(
             (
                 candidate
-                for candidate in _gr00t_n17_action_key_candidates("joint_position")
+                for candidate in _gr00t_n16_action_key_candidates("joint_position")
                 if candidate in action
             ),
             None,
@@ -521,7 +524,7 @@ class Gr00tN17Client:
         gripper_key = next(
             (
                 candidate
-                for candidate in _gr00t_n17_action_key_candidates("gripper_position")
+                for candidate in _gr00t_n16_action_key_candidates("gripper_position")
                 if candidate in action
             ),
             None,
@@ -529,7 +532,7 @@ class Gr00tN17Client:
 
         if joint_key is None or gripper_key is None:
             raise KeyError(
-                "GR00T N1.7 action dict must contain joint_position and gripper_position entries"
+                "GR00T N1.6 action dict must contain joint_position and gripper_position entries"
             )
 
         joint_chunk = np.asarray(action[joint_key], dtype=np.float32)
@@ -543,17 +546,14 @@ class Gr00tN17Client:
             raise ValueError(
                 f"Expected gripper_position action to have shape (B, T, 1), got {gripper_chunk.shape}"
             )
-
         if joint_chunk.shape[0] != 1 or gripper_chunk.shape[0] != 1:
             raise ValueError(
-                "REALM GR00T N1.7 adapter currently supports batch size 1 for action chunk extraction"
+                "REALM GR00T N1.6 adapter currently supports batch size 1 for action chunk extraction"
             )
-
         if joint_chunk.shape[1] != gripper_chunk.shape[1]:
             raise ValueError(
                 f"Joint/gripper horizons must match, got {joint_chunk.shape[1]} and {gripper_chunk.shape[1]}"
             )
-
         if joint_chunk.shape[2] != 7:
             raise ValueError(
                 f"Expected joint_position action dimension 7, got {joint_chunk.shape[2]}"
@@ -579,13 +579,7 @@ class Gr00tN17Client:
     def infer(
         self, payload: dict[str, Any], options: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        if all(key in payload for key in ("video", "state", "language")):
-            observation = payload
-            request_options = options
-        elif "observation" in payload and isinstance(payload["observation"], dict):
-            observation = payload["observation"]
-            request_options = payload.get("options", options)
-        elif all(
+        if all(
             key in payload
             for key in (
                 "instruction",
@@ -593,7 +587,6 @@ class Gr00tN17Client:
                 "wrist_im",
                 "robot_state",
                 "gripper_state",
-                "cartesian_position",
             )
         ):
             observation = self.build_observation(
@@ -603,21 +596,24 @@ class Gr00tN17Client:
                 wrist_im=payload["wrist_im"],
                 robot_state=payload["robot_state"],
                 gripper_state=payload["gripper_state"],
-                cartesian_position=payload["cartesian_position"],
                 use_base_im_second=payload.get("use_base_im_second", False),
                 update_frame_buffer=payload.get("update_frame_buffer", True),
             )
             request_options = payload.get("options", options)
+        elif "observation" in payload and isinstance(payload["observation"], dict):
+            observation = payload["observation"]
+            request_options = payload.get("options", options)
         else:
             observation = payload
             request_options = options
+
         action, _ = self.get_action(observation, request_options)
         return action
 
     def reset(self, options: dict[str, Any] | None = None) -> dict[str, Any]:
+        self._observation_stats_printed = False
         self._frame_buffer.clear()
         self._state_buffer.clear()
-        self._observation_stats_printed = False
         return self._client.reset(options=options)
 
     def __getattr__(self, name: str) -> Any:

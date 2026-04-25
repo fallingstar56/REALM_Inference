@@ -38,7 +38,7 @@ SUPPORTED_PERTURBATIONS = [
     'Default', #0
     'V-AUG', # 1
     'V-VIEW',  # 2
-    'V-SC', # 1
+    'V-SC', # 3
     'V-LIGHT', # 4
     'S-PROP', # 5
     'S-LANG', # 6
@@ -52,7 +52,6 @@ SUPPORTED_PERTURBATIONS = [
     'VB-MOBJ',  # 14
     'VSB-NOBJ' # 15
 ]
-
 
 def set_sim_config(rendering_mode=None, robot="DROID"):
     if robot == "WidowX": # TODO: just read this from the yamls...
@@ -245,12 +244,6 @@ def evaluate(
             was_grasping = is_grasping
 
             if action_buffer.empty():
-                if model_type in ["GR00T", "gr00t_n17"] and t == 0:
-                    og.log.info(
-                        f"[GR00T gripper debug] scene_gripper={float(gripper_state):.4f} "
-                        f"server_gripper={float(gripper_state):.4f}"
-                    )
-
                 pred_action_chunk = client.infer(
                     env.instruction, base_im, base_im_second, wrist_im, robot_state, gripper_state,
                     use_base_im_second=use_base_im_second,
@@ -278,12 +271,7 @@ def evaluate(
             new_action = action.copy()
             if model_type in ["GR00T", "gr00t_n17"]:
                 new_action[-1] = model_gripper_position_to_scene_command(action[-1])
-                if t == 0:
-                    og.log.info(
-                        f"[GR00T gripper debug] server_action={float(action[-1]):.4f} "
-                        f"scene_cmd={float(new_action[-1]):.1f} (-1=open, 1=close)"
-                    )
-            elif model_type in ["debug", "openpi", "GR00T_N16", "dreamzero"]: # TODO: use a model config
+            elif model_type in ["debug", "openpi", "GR00T_N16", "gr00t_n16", "dreamzero"]: # TODO: use a model config
                 new_action[-1] = discretize_gripper_action(
                     action[-1],
                     open_if_above_threshold=True,

@@ -16,10 +16,9 @@ class InferenceClient:
         self.model_type = model_type
         self.host = host
         self.port = port
+        self.gr00t_n16_modality_config = None
         self.gr00t_n17_modality_config = None
-        # if model_type == "GR00T_N16":
-        #     self.client = ExternalRobotInferenceClient(host=self.host, port=self.port)
-        # elif model_type == "hamster":
+        # if model_type == "hamster":
         #     self.client = HamsterClient(host=self.host, port=self.port)
         # elif model_type == "dreamzero":
         #     self.client = DreamZeroClient(host=self.host, port=self.port)
@@ -29,6 +28,8 @@ class InferenceClient:
                 host=host,
                 port=port
             )
+        elif model_type in {"GR00T_N16", "gr00t_n16"}:
+            self.client = self._init_gr00t_n16_client(host, port, timeout)
         elif model_type == "gr00t_n17":
             self.client = self._init_gr00t_n17_client(host, port, timeout)
         elif model_type == "GR00T":
@@ -41,6 +42,22 @@ class InferenceClient:
             self.client = None
         else:
             raise NotImplementedError()
+
+    def _init_gr00t_n16_client(self, host, port, timeout):
+        from realm.inference.gr00t_n16 import Gr00tN16Client
+
+        og.log.info(f"Connecting to GR00T N1.6 server at {host}:{port}...")
+        client = Gr00tN16Client(
+            host=host,
+            port=port,
+            timeout_ms=int(timeout * 1000),
+        )
+        self.gr00t_n16_modality_config = client.connect(fetch_modality_config=True)
+        og.log.info(
+            "Connected to GR00T N1.6 server. "
+            f"Modality config keys: {list(self.gr00t_n16_modality_config.keys())}"
+        )
+        return client
 
     def _init_gr00t_n17_client(self, host, port, timeout):
         from realm.inference.gr00t_n17 import Gr00tN17Client
@@ -60,6 +77,9 @@ class InferenceClient:
 
     def _uses_gr00t_n17_adapter(self):
         return self.model_type in {"gr00t_n17", "GR00T"}
+
+    def _uses_gr00t_n16_adapter(self):
+        return self.model_type in {"GR00T_N16", "gr00t_n16"}
 
     def _prepare_gripper_state_for_model(self, gripper_state):
         """Forward the normalized scene gripper scalar to the GR00T DROID client.
@@ -82,25 +102,19 @@ class InferenceClient:
             return pred_action_chunk
 
         # TODO: all DROID EE control poses need to have flip_pose_pointing_down() applied before being passed to the step
-        if self.model_type == "GR00T_N16":
-            base_im_resized = image_tools.resize_with_pad(base_im, 224, 224)[None, None]   # (1,1,224,224,3)
-            wrist_im_resized = image_tools.resize_with_pad(wrist_im, 224, 224)[None, None]  # (1,1,224,224,3)
-
-            obs_dict = {
-                "observation": {
-                    "video.wrist_image_left": wrist_im_resized,
-                    "video.exterior_image_1_left": base_im_resized,
-                    "state.joint_position": np.array(robot_state).astype(np.float32).reshape(1, 1, 7),
-                    "state.gripper_position": np.atleast_1d(np.array(gripper_state)).astype(np.float32).reshape(1, 1, 1),
-                    "annotation.language.language_instruction": [instruction]
+        if self.model_type in {"GR00T_N16", "gr00t_n16"}:
+            pred_action_chunk = self.client.infer_action_chunk(
+                {
+                    "instruction": instruction,
+                    "base_im": base_im,
+                    "base_im_second": base_im_second,
+                    "wrist_im": wrist_im,
+                    "robot_state": robot_state,
+                    "gripper_state": gripper_state,
+                    "use_base_im_second": use_base_im_second,
+                    "update_frame_buffer": False,
                 }
-            }
-
-            pred = self.client.get_action(obs_dict)[0]
-
-            pred_action_chunk = np.concatenate(
-                [pred["action.joint_position"].reshape(-1, 7),
-                 pred["action.gripper_position"].reshape(-1, 1)], axis=-1)
+            )
             return pred_action_chunk
 
         elif self._uses_gr00t_n17_adapter():
@@ -197,7 +211,7 @@ class InferenceClient:
         gripper_state=None,
         cartesian_position=None,
     ):
-        if self._uses_gr00t_n17_adapter() and hasattr(self.client, "observe"):
+        if (self._uses_gr00t_n16_adapter() or self._uses_gr00t_n17_adapter()) and hasattr(self.client, "observe"):
             self.client.observe(
                 base_im=base_im,
                 base_im_second=base_im_second,

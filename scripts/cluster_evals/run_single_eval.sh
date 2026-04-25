@@ -24,6 +24,10 @@ GR00T_SERVER_ENTRYPOINT="gr00t/eval/run_gr00t_server.py"
 GR00T_EMBODIMENT_TAG="${GR00T_EMBODIMENT_TAG:-OXE_DROID_RELATIVE_EEF_RELATIVE_JOINT}"
 GR00T_SERVER_HOST="0.0.0.0"
 GR00T_SERVER_DEVICE="${GR00T_DEVICE:-cuda:0}"
+GR00T_N16_SERVER_ENTRYPOINT="gr00t/eval/run_gr00t_server.py"
+GR00T_N16_EMBODIMENT_TAG="${GR00T_N16_EMBODIMENT_TAG:-OXE_DROID}"
+GR00T_N16_SERVER_HOST="0.0.0.0"
+GR00T_N16_SERVER_DEVICE="${GR00T_N16_DEVICE:-cuda:0}"
 MODEL_SERVER_TIMEOUT="${MODEL_SERVER_TIMEOUT:-180}"
 
 PORT_CHECK_CMD=""
@@ -91,14 +95,24 @@ NORMALIZED_MODEL_TYPE="$MODEL_TYPE"
 if [[ "$MODEL_TYPE" == "GR00T" ]]; then
   NORMALIZED_MODEL_TYPE="gr00t_n17"
   echo "Warning: MODEL_TYPE=GR00T is a compatibility alias. Prefer MODEL_TYPE=gr00t_n17." >&2
+elif [[ "$MODEL_TYPE" == "gr00t_n16" ]]; then
+  NORMALIZED_MODEL_TYPE="GR00T_N16"
 fi
 
 if [[ "$NORMALIZED_MODEL_TYPE" == "gr00t_n17" && -z "${CHECKPOINT_PATH:-}" && -n "${GR00T_MODEL_PATH:-}" ]]; then
   CHECKPOINT_PATH="$GR00T_MODEL_PATH"
 fi
 
+if [[ "$NORMALIZED_MODEL_TYPE" == "GR00T_N16" && -z "${CHECKPOINT_PATH:-}" && -n "${GR00T_N16_MODEL_PATH:-}" ]]; then
+  CHECKPOINT_PATH="$GR00T_N16_MODEL_PATH"
+fi
+
 if [[ "$NORMALIZED_MODEL_TYPE" == "gr00t_n17" && -z "${POLICY_RUN_DIR:-}" && -n "${GR00T_ROOT:-}" ]]; then
   POLICY_RUN_DIR="$GR00T_ROOT"
+fi
+
+if [[ "$NORMALIZED_MODEL_TYPE" == "GR00T_N16" && -z "${POLICY_RUN_DIR:-}" && -n "${GR00T_N16_ROOT:-}" ]]; then
+  POLICY_RUN_DIR="$GR00T_N16_ROOT"
 fi
 
 
@@ -170,6 +184,36 @@ if [ "$DEBUG" = "false" ]; then
       echo "GR00T server is listening on port ${port}"
     else
       echo "GR00T server did not start listening on ${port} within ${MODEL_SERVER_TIMEOUT}s"
+      kill "$SERVER_PID" 2>/dev/null || true
+      exit 1
+    fi
+  elif [ "$NORMALIZED_MODEL_TYPE" == "GR00T_N16" ]; then
+    if [[ -z "${POLICY_RUN_DIR:-}" ]]; then
+      echo "POLICY_RUN_DIR is not set for GR00T N1.6. Pass --policy_run_dir or export GR00T_N16_ROOT."
+      exit 1
+    fi
+    if [[ -z "${CHECKPOINT_PATH:-}" ]]; then
+      echo "CHECKPOINT_PATH is not set for GR00T N1.6. Pass --checkpoint_path or export GR00T_N16_MODEL_PATH."
+      exit 1
+    fi
+    if [[ ! -f "$POLICY_RUN_DIR/$GR00T_N16_SERVER_ENTRYPOINT" ]]; then
+      echo "POLICY_RUN_DIR does not contain $GR00T_N16_SERVER_ENTRYPOINT: $POLICY_RUN_DIR"
+      exit 1
+    fi
+    cd "$POLICY_RUN_DIR" || exit
+    uv run python "$GR00T_N16_SERVER_ENTRYPOINT" \
+      --model-path "$CHECKPOINT_PATH" \
+      --embodiment-tag "$GR00T_N16_EMBODIMENT_TAG" \
+      --use_sim_policy_wrapper \
+      --host "$GR00T_N16_SERVER_HOST" \
+      --port "$port" \
+      --device "$GR00T_N16_SERVER_DEVICE" & SERVER_PID=$!
+
+    echo "Waiting for the GR00T N1.6 model server to start (maximum: ${MODEL_SERVER_TIMEOUT}s)"
+    if wait_for_port "$port" "$MODEL_SERVER_TIMEOUT"; then
+      echo "GR00T N1.6 server is listening on port ${port}"
+    else
+      echo "GR00T N1.6 server did not start listening on ${port} within ${MODEL_SERVER_TIMEOUT}s"
       kill "$SERVER_PID" 2>/dev/null || true
       exit 1
     fi

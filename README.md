@@ -148,3 +148,77 @@ cp -a /home/xuhanyuan/REALM_Inference/data/datasets/og_dataset /home/xuhanyuan/R
 - Slow or blocked model downloads: keep `HF_ENDPOINT=https://hf-mirror.com` enabled before launching the GR00T server.
 - GR00T not reachable from REALM: make sure the GR00T server is already listening on `0.0.0.0:5555` on the host before starting evaluation.
 - No standalone videos saved: keep `--save_mp4` in the evaluation command.
+
+## Run REALM with GR00T N1.6
+
+GR00T N1.6 now uses the same single-server pattern as N1.7. REALM only adds the observation and action alignment layer; rollout and controller logic stay unchanged.
+
+### 1. Set environment variables on the host
+
+```bash
+export REALM_ROOT=/home/xuhanyuan/REALM_Inference
+export GR00T_N16_ROOT=/home/xuhanyuan/Isaac-GR00T-n1.6-release
+export REALM_DATA_PATH=/home/xuhanyuan/REALM_DATA
+export HF_ENDPOINT=https://hf-mirror.com
+export GR00T_N16_MODEL_PATH=nvidia/GR00T-N1.6-DROID
+export GR00T_N16_EMBODIMENT_TAG=OXE_DROID
+export GR00T_N16_DEVICE=cuda:0
+```
+
+### 2. Start the GR00T N1.6 server
+
+```bash
+cd /home/xuhanyuan/Isaac-GR00T-n1.6-release
+uv sync --python 3.10
+
+uv run python gr00t/eval/run_gr00t_server.py \
+  --model-path "$GR00T_N16_MODEL_PATH" \
+  --embodiment-tag "$GR00T_N16_EMBODIMENT_TAG" \
+  --use_sim_policy_wrapper \
+  --host 0.0.0.0 \
+  --port 5555 \
+  --device "$GR00T_N16_DEVICE"
+```
+
+`--use_sim_policy_wrapper` is required because REALM sends the flat DROID-style keys that the official N1.6 DROID example uses.
+
+### 3. Start REALM in Docker
+
+Before starting the container, export the N1.6 repo path so the client-side adapter can import the official `PolicyClient` inside Docker:
+
+```bash
+export GR00T_N16_ROOT=/home/xuhanyuan/Isaac-GR00T-n1.6-release
+cd /home/xuhanyuan/REALM_Inference
+./scripts/run_docker.sh --headless /home/xuhanyuan/REALM_DATA
+```
+
+### 4. Run evaluation inside the container
+
+```bash
+cd /app
+export GR00T_N16_ROOT=/app/Isaac-GR00T-n1.6-release
+export ISAAC_GR00T_N16_ROOT=/app/Isaac-GR00T-n1.6-release
+export OMNIGIBSON_HEADLESS=1
+
+pip install pyzmq==27.0.1
+
+python examples/02_evaluate.py \
+  --perturbation_id 0 \
+  --task_id 1 \
+  --repeats 10 \
+  --max_steps 100 \
+  --horizon 8 \
+  --model_name gr00t_n16 \
+  --model_type GR00T_N16 \
+  --host 127.0.0.1 \
+  --port 5555 \
+  --experiment_name gr00t_n16_smoke \
+  --save_mp4
+```
+
+You can also launch through the unified script:
+
+```bash
+cd /home/xuhanyuan/REALM_Inference
+./scripts/eval.sh -m gr00t_n16 -c "$GR00T_N16_MODEL_PATH" -e docker
+```

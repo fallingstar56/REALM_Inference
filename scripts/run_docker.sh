@@ -59,6 +59,17 @@ if [[ -n "${GR00T_ROOT:-}" ]]; then
         -v "$GR00T_ROOT:/app/Isaac-GR00T:rw"
     )
 fi
+if [[ -n "${GR00T_N16_ROOT:-}" ]]; then
+    if [[ ! -d "$GR00T_N16_ROOT" ]]; then
+        echo "GR00T_N16_ROOT is set but does not exist: $GR00T_N16_ROOT" >&2
+        exit 1
+    fi
+    GR00T_DOCKER_ARGS+=(
+        -e "GR00T_N16_ROOT=/app/Isaac-GR00T-n1.6-release"
+        -e "ISAAC_GR00T_N16_ROOT=/app/Isaac-GR00T-n1.6-release"
+        -v "$GR00T_N16_ROOT:/app/Isaac-GR00T-n1.6-release:rw"
+    )
+fi
 
 cd $REALM_ROOT
 mkdir -p $REALM_DATA_PATH/isaac-sim/cache/kit

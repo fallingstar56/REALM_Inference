@@ -184,21 +184,21 @@ def extract_from_obs(obs: dict, robot_name="DROID", enable_depth=False, robot=No
     proprio = _to_numpy(robot_obs["proprio"]).astype(np.float32).reshape(-1)
     robot_state = proprio[:7]
 
-    """
     if proprio.size >= 9:
         finger_qpos = proprio[7:9]
     elif proprio.size >= 8:
-        finger_qpos = proprio[7:8] 
+        finger_qpos = proprio[7:8]
     else:
         finger_qpos = proprio[-1:]
-        
+
+
     open_qpos, closed_qpos = _extract_gripper_limits_from_robot(robot)
     gripper_state = normalize_gripper_position(
         finger_qpos,
         open_qpos=open_qpos,
         closed_qpos=closed_qpos,
     )
-    """
-    gripper_state = proprio[7] / 0.05
+    
+    # gripper_state = proprio[7] / 0.05
 
     return base_im, base_depth, base_im_second, base_depth_second, wrist_im, robot_state, gripper_state

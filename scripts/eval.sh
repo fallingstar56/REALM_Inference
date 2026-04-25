@@ -16,6 +16,7 @@ Checkpoint selection:
     -c, --ckpt-path PATH       Host path to the model checkpoint
                                Required for pi0 / pi0_FAST
                                For GR00T N1.7, defaults to GR00T_MODEL_PATH if unset
+                               For GR00T N1.6, defaults to GR00T_N16_MODEL_PATH if unset
 
 Rest of options:
   -p, --perturbation-id ID   Perturbation ID [0–15]. Default: 0
@@ -52,7 +53,7 @@ Rest of options:
   -s, --max-steps N          Max steps per episode before termination. Default: 500
 
   -m, --model MODEL          Either:
-                                                             - one of: pi0 | pi0_FAST | gr00t_n17 | GR00T
+                                                                                                                         - one of: pi0 | pi0_FAST | gr00t_n16 | GR00T_N16 | gr00t_n17 | GR00T
                                - or path to an executable script that starts a model server
                              Default: pi0
 
@@ -66,6 +67,12 @@ Environment for GR00T N1.7:
     GR00T_MODEL_PATH           Model path used when --ckpt-path is omitted
     GR00T_EMBODIMENT_TAG       Embodiment tag passed to run_gr00t_server.py
     GR00T_DEVICE               Device passed to run_gr00t_server.py (default: cuda:0)
+
+Environment for GR00T N1.6:
+    GR00T_N16_ROOT             Isaac-GR00T-n1.6-release repo root
+    GR00T_N16_MODEL_PATH       Model path used when --ckpt-path is omitted
+    GR00T_N16_EMBODIMENT_TAG   Embodiment tag passed to run_gr00t_server.py (default: OXE_DROID)
+    GR00T_N16_DEVICE           Device passed to run_gr00t_server.py (default: cuda:0)
 
 Other:
   -h, --help                 Show this help and exit
@@ -220,6 +227,12 @@ done
 
 REALM_MODEL="$MODEL"
 case "$MODEL" in
+    gr00t_n16)
+        REALM_MODEL="GR00T_N16"
+        ;;
+    GR00T_N16)
+        REALM_MODEL="GR00T_N16"
+        ;;
     GR00T)
         REALM_MODEL="gr00t_n17"
         echo "Warning: MODEL=GR00T is a compatibility alias. Prefer MODEL=gr00t_n17." >&2
@@ -235,10 +248,16 @@ if [[ -z "$CKPT_PATH" && "$REALM_MODEL" == "gr00t_n17" && -n "${GR00T_MODEL_PATH
     CKPT_PATH="$GR00T_MODEL_PATH"
 fi
 
+if [[ -z "$CKPT_PATH" && "$REALM_MODEL" == "GR00T_N16" && -n "${GR00T_N16_MODEL_PATH:-}" ]]; then
+    CKPT_PATH="$GR00T_N16_MODEL_PATH"
+fi
+
 if [[ -z "$CKPT_PATH" ]]; then
     echo "Error: --ckpt-path is required." >&2
     if [[ "$REALM_MODEL" == "gr00t_n17" ]]; then
         echo "Set --ckpt-path or export GR00T_MODEL_PATH for GR00T N1.7." >&2
+    elif [[ "$REALM_MODEL" == "GR00T_N16" ]]; then
+        echo "Set --ckpt-path or export GR00T_N16_MODEL_PATH for GR00T N1.6." >&2
     fi
     echo
     print_help
@@ -272,10 +291,10 @@ case "$EVAL_ENV" in
 esac
 
 case "$MODEL" in
-    pi0|pi0_FAST|gr00t_n17|GR00T)
+    pi0|pi0_FAST|gr00t_n16|GR00T_N16|gr00t_n17|GR00T)
         ;;
     *)
-        echo "$MODEL is not in (pi0|pi0_FAST|gr00t_n17|GR00T). Assuming that it is an executable file."
+        echo "$MODEL is not in (pi0|pi0_FAST|gr00t_n16|GR00T_N16|gr00t_n17|GR00T). Assuming that it is an executable file."
         if [ ! -e "$MODEL" ]; then
             echo "Error: MODEL '$MODEL' does not exist."
             exit 1
@@ -535,6 +554,10 @@ GR00T_SERVER_ENTRYPOINT="gr00t/eval/run_gr00t_server.py"
 GR00T_EMBODIMENT_TAG="${GR00T_EMBODIMENT_TAG:-OXE_DROID_RELATIVE_EEF_RELATIVE_JOINT}"
 GR00T_SERVER_HOST="0.0.0.0"
 GR00T_SERVER_DEVICE="${GR00T_DEVICE:-cuda:0}"
+GR00T_N16_SERVER_ENTRYPOINT="gr00t/eval/run_gr00t_server.py"
+GR00T_N16_EMBODIMENT_TAG="${GR00T_N16_EMBODIMENT_TAG:-OXE_DROID}"
+GR00T_N16_SERVER_HOST="0.0.0.0"
+GR00T_N16_SERVER_DEVICE="${GR00T_N16_DEVICE:-cuda:0}"
 
 PORT=$(choose_model_port)
 echo "Using port $PORT for model server"
@@ -631,6 +654,28 @@ elif [ "$REALM_MODEL" == "gr00t_n17" ]; then
         --host "$GR00T_SERVER_HOST" \
         --port "$PORT" \
         --device "$GR00T_SERVER_DEVICE" & SERVER_PID=$!
+
+    # capture process group of the server
+    SERVER_PGID="$SERVER_PID"
+elif [ "$REALM_MODEL" == "GR00T_N16" ]; then
+    if [[ -z "${GR00T_N16_ROOT:-}" ]]; then
+        echo "GR00T_N16_ROOT is not set."
+        echo "Set it to the Isaac-GR00T-n1.6-release root to use, e.g.:"
+        echo "  export GR00T_N16_ROOT=\"/path/to/Isaac-GR00T-n1.6-release\""
+        exit 1
+    fi
+    if [[ ! -f "$GR00T_N16_ROOT/$GR00T_N16_SERVER_ENTRYPOINT" ]]; then
+        echo "GR00T_N16_ROOT does not contain $GR00T_N16_SERVER_ENTRYPOINT: $GR00T_N16_ROOT"
+        exit 1
+    fi
+    cd "$GR00T_N16_ROOT"
+    setsid uv run python "$GR00T_N16_SERVER_ENTRYPOINT" \
+        --model-path "$CKPT_PATH" \
+        --embodiment-tag "$GR00T_N16_EMBODIMENT_TAG" \
+        --use_sim_policy_wrapper \
+        --host "$GR00T_N16_SERVER_HOST" \
+        --port "$PORT" \
+        --device "$GR00T_N16_SERVER_DEVICE" & SERVER_PID=$!
 
     # capture process group of the server
     SERVER_PGID="$SERVER_PID"

@@ -1,4 +1,4 @@
-__all__ = ["InferenceClient", "Gr00tN17Client", "extract_from_obs"]
+__all__ = ["InferenceClient", "Gr00tN16Client", "Gr00tN17Client", "extract_from_obs"]
 
 
 def __getattr__(name):
@@ -6,6 +6,10 @@ def __getattr__(name):
         from realm.inference.client import InferenceClient
 
         return InferenceClient
+    if name == "Gr00tN16Client":
+        from realm.inference.gr00t_n16 import Gr00tN16Client
+
+        return Gr00tN16Client
     if name == "Gr00tN17Client":
         from realm.inference.gr00t_n17 import Gr00tN17Client
 

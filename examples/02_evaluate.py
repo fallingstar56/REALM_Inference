@@ -18,7 +18,7 @@ if __name__ == "__main__":
         type=str,
         required=True,
         default=None,
-        help='Inference backend identifier. Recommended values include openpi, pi0_FAST, and gr00t_n17.',
+        help='Inference backend identifier. Recommended values include openpi, pi0_FAST, GR00T_N16, and gr00t_n17.',
     )
     parser.add_argument('--port', type=int, required=True)
     parser.add_argument('--host', type=str, required=False, default="127.0.0.1", help='Inference server host')
