@@ -400,4 +400,3 @@ def evaluate(
     save_results(results, log_dir+"/reports", task, perturbations[0])
     og.log.info("Done!")
     og.log.info(f"DEBUG: Done: {time.perf_counter() - start:.4f}s")
-
