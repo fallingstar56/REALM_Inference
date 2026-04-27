@@ -1,20 +1,3 @@
-# REALM: A Real-to-Sim Validated Benchmark for Generalization in Robotic Manipulation
-
-<p align="center">
-  <a href="https://martin-sedlacek.com/realm"><img src="https://img.shields.io/badge/project-page-brightgreen" alt="Project Page"></a>
-  <a href="https://arxiv.org/abs/2512.19562/"><img src="https://img.shields.io/badge/paper-preprint-red" alt="arXiv"></a>
-  <a href="https://github.com/martin-sedlacek/REALM/wiki"><img src="https://img.shields.io/badge/doc-page-orange" alt="Documentation"></a>
-  <a href="https://github.com/martin-sedlacek/REALM/issues"><img src="https://img.shields.io/github/issues/martin-sedlacek/REALM?color=yellow" alt="Issues"></a>
-  <a href="https://github.com/martin-sedlacek/REALM/discussions"><img src="https://img.shields.io/github/discussions/martin-sedlacek/REALM?color=blueviolet" alt="Discussions"></a>
-</p>
-
-![](./images/realm_overview_fig.png)
-
-REALM is a large-scale realistic simulation environment and benchmark for generalization 
-in robotic manipulation. It supports 7 distinct manipulation skills and stress-tests them 
-against 15 perturbations. Through empirical validation, we show that evaluation results 
-in simulation are strongly correlated to real-world performance. 
-
 # Introduction
 This repository is a fork of [REALM](https://github.com/martin-sedlacek/REALM.git).We add an interface for infering using the [GR00T](https://github.com/NVIDIA/Isaac-GR00T.git)(N1.6 & N1.7).
 
