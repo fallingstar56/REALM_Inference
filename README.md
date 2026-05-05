@@ -1,7 +1,120 @@
 # Introduction
-This repository is a fork of [REALM](https://github.com/martin-sedlacek/REALM.git).We add an interface for infering using the [GR00T](https://github.com/NVIDIA/Isaac-GR00T.git)(N1.6 & N1.7).
+This repository is a fork of [REALM](https://github.com/martin-sedlacek/REALM.git). We add an interface for infering using the [GR00T](https://github.com/NVIDIA/Isaac-GR00T.git)(N1.6 & N1.7).
 
 # Usage
+
+## One-command evaluation scripts
+
+The repository root contains two convenience launchers for running full REALM evaluation batches with GR00T:
+
+- `run17.sh` runs REALM with GR00T N1.7.
+- `run16.sh` runs REALM with GR00T N1.6.
+
+Both scripts start the matching GR00T server on the host, wait until the server is reachable, start one REALM Docker container with host networking, and then run `examples/02_evaluate.py` for every configured task and perturbation pair. Server logs are written to `logs/gr00t_n17_server_*.log` or `logs/gr00t_n16_server_*.log`.
+
+Before running either script, make sure Docker is available, the REALM dataset path exists, and the NVIDIA Omniverse EULA has been accepted. For non-interactive runs, set:
+
+```bash
+export OMNIVERSE_EULA_ACCEPTED=1
+```
+
+### Run GR00T N1.7 batch evaluation
+
+`run17.sh` uses the GR00T N1.7 repository and model by default:
+
+```bash
+cd /home/xuhanyuan/REALM_Inference
+./run17.sh
+```
+
+Default settings:
+
+- GR00T repository: `/home/xuhanyuan/Isaac-GR00T`
+- Model: `nvidia/GR00T-N1.7-3B`
+- Embodiment tag: `OXE_DROID_RELATIVE_EEF_RELATIVE_JOINT`
+- Task IDs: `0 2 3 5 6 8 9`
+- Perturbation IDs: `1 3 4 5 15`
+- Repeats: `15`
+- Max steps: `350`
+- Horizon: `15`
+- Evaluation model name/type: `gr00t_n17`
+
+Useful options:
+
+```bash
+./run17.sh --no-uv-sync
+./run17.sh --reuse-server
+./run17.sh --help
+```
+
+Use `--no-uv-sync` when the GR00T N1.7 `uv` environment is already prepared. Use `--reuse-server` when a compatible N1.7 server is already listening on the configured host and port.
+
+### Run GR00T N1.6 batch evaluation
+
+`run16.sh` uses the GR00T N1.6 release repository and DROID model by default:
+
+```bash
+cd /home/xuhanyuan/REALM_Inference
+./run16.sh
+```
+
+Default settings:
+
+- GR00T repository: `/home/xuhanyuan/Isaac-GR00T-n1.6-release`
+- Model: `nvidia/GR00T-N1.6-DROID`
+- Embodiment tag: `OXE_DROID`
+- Task IDs: `0 1 2 3 4 5 6 8 9`
+- Perturbation IDs: `1 3 4 5 15`
+- Repeats: `15`
+- Max steps: `350`
+- Horizon: `8`
+- Evaluation model name: `gr00t_n16`
+- Evaluation model type: `GR00T_N16`
+
+Useful options:
+
+```bash
+./run16.sh --no-uv-sync
+./run16.sh --reuse-server
+./run16.sh --help
+```
+
+The N1.6 server is started with `--use_sim_policy_wrapper`, which is required for the flat DROID-style observation and action keys used by the REALM adapter. Unlike `run17.sh`, `run16.sh` does not automatically reuse an unknown process already listening on the target port, because an N1.7 server returns incompatible modality keys. Stop the existing process, choose another `GR00T_PORT`, or pass `--reuse-server` only when the running service is already a compatible N1.6 server.
+
+### Common environment overrides
+
+The launchers can be customized with environment variables:
+
+```bash
+export REALM_ROOT=/home/xuhanyuan/REALM_Inference
+export REALM_DATA_PATH=/home/xuhanyuan/REALM_DATA
+export REALM_DOCKER_IMAGE=realm
+export GR00T_HOST=127.0.0.1
+export GR00T_SERVER_HOST=0.0.0.0
+export GR00T_PORT=5555
+export REPEATS=15
+export MAX_STEPS=350
+export MODEL_SERVER_TIMEOUT=900
+```
+
+N1.7-specific overrides:
+
+```bash
+export GR00T_ROOT=/home/xuhanyuan/Isaac-GR00T
+export GR00T_MODEL_PATH=nvidia/GR00T-N1.7-3B
+export GR00T_EMBODIMENT_TAG=OXE_DROID_RELATIVE_EEF_RELATIVE_JOINT
+export GR00T_DEVICE=cuda:0
+```
+
+N1.6-specific overrides:
+
+```bash
+export GR00T_N16_ROOT=/home/xuhanyuan/Isaac-GR00T-n1.6-release
+export GR00T_N16_MODEL_PATH=nvidia/GR00T-N1.6-DROID
+export GR00T_N16_EMBODIMENT_TAG=OXE_DROID
+export GR00T_N16_DEVICE=cuda:0
+```
+
 ## Run REALM with GR00T N1.7
 
 ### 1. Set environment variables on the host
