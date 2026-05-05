@@ -100,7 +100,7 @@ python examples/02_evaluate.py \
   --task_id 1 \
   --repeats 10 \
   --max_steps 100 \
-  --horizon 8 \
+  --horizon 15 \
   --model_name gr00t_n17 \
   --model_type gr00t_n17 \
   --host 127.0.0.1 \
@@ -187,9 +187,9 @@ pip install pyzmq==27.0.1
 
 python examples/02_evaluate.py \
   --perturbation_id 0 \
-  --task_id 1 \
-  --repeats 10 \
-  --max_steps 100 \
+  --task_id 0 \
+  --repeats 1 \
+  --max_steps 1000 \
   --horizon 8 \
   --model_name gr00t_n16 \
   --model_type GR00T_N16 \
